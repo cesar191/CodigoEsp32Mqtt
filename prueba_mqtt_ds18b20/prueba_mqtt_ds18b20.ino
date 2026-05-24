@@ -25,68 +25,73 @@
   -d15 SS-->17
   
 */
-//librerias para el wifi y mqtt
-  #include <WiFi.h>
-  #include <WiFiMulti.h>
-  #include <MQTT.h>
-  #include "data.h"
-//libreriras para ds18b20
-  #include <OneWire.h>                  
-  #include <DallasTemperature.h>
-//libreias i2c y oled
-  #include <SPI.h>//para cuando se usa mosi, miso, clk, ss en el caso del sd
-  #include <Wire.h>
-  #include <Adafruit_GFX.h>
-  #include <Adafruit_SSD1306.h>
-//cliente mqtt 
-  WiFiMulti wifiMulti;
-  WiFiClient net;
-  MQTTClient clienteMQTT;
+//librerias
+  //librerias para el wifi y mqtt
+    #include <WiFi.h>
+    #include <WiFiMulti.h>
+    #include <MQTT.h>
+    #include "data.h"
+  //libreriras para ds18b20
+    #include <OneWire.h>                  
+    #include <DallasTemperature.h>
+  //libreias i2c y oled
+    #include <SPI.h>//para cuando se usa mosi, miso, clk, ss en el caso del sd
+    #include <Wire.h>
+    #include <Adafruit_GFX.h>
+    #include <Adafruit_SSD1306.h>
+//variables
+  //cliente mqtt 
+    WiFiMulti wifiMulti;
+    WiFiClient net;
+    MQTTClient clienteMQTT;
 
-  unsigned long tiempoAnt = 0;
+    unsigned long tiempoAnt = 0;
 
-//establece los pines para los sensores
-  OneWire ourWire1(14);                
-  OneWire ourWire2(27);               
-//se declara las variables para los sensores
-  DallasTemperature sensors1(&ourWire1); 
-  DallasTemperature sensors2(&ourWire2);
-//se declara la pantalla oled
-  Adafruit_SSD1306 display = Adafruit_SSD1306(128, 64, &Wire);
-//corriente
-  int corriente1=35;
-  int corriente2=34;
-//alarmas
-  const int led1=26;
-  const int led2=25;
-  const int ventilador1=33;
-  const int ventilador2=32;
-  String estadoled1="off";
-  String estadoled2="off";
-  String estadoventilador1="off";
-  String estadoventilador2="off";
-//pwm pines solo tiene 0-15 canales de pwm
-  const int q1=13;
-  const int q2=12;
-//parametros pwm
-  const int frecuencia=100000;
-  const int resolucion=8;
-  int dutyCycle1=0;
-  int dutyCycle2=0;
-//parametros para el filtro de media exponencial
-  float temp1;
-  float temp2;
-  int resolucionTemperatura=12;
+  //establece los pines para los sensores
+    OneWire ourWire1(14);                
+    OneWire ourWire2(27);               
+  //se declara las variables para los sensores
+    DallasTemperature sensors1(&ourWire1); 
+    DallasTemperature sensors2(&ourWire2);
+  //se declara la pantalla oled
+    Adafruit_SSD1306 display = Adafruit_SSD1306(128, 64, &Wire);
+  //corriente
+    int corriente1=35;
+    int corriente2=34;
+  //alarmas
+    const int led1=26;
+    const int led2=25;
+    String estadoled1="off";
+    String estadoled2="off";
+  //ventiladores
+    const int ventilador1=33;
+    const int ventilador2=32;
+    String estadoventilador1="off";
+    String estadoventilador2="off";
+  //pwm pines solo tiene 0-15 canales de pwm
+    const int q1=13;
+    const int q2=12;
+  //parametros pwm
+    const int frecuencia=100000;
+    const int resolucion=8;
+    int dutyCycle1=0;
+    int dutyCycle2=0;
+  //parametros para el filtro de media exponencial
+    float temp1;
+    float temp2;
+    int resolucionTemperatura=12;
 
-  float corrienteQ1;
-  float corrienteQ2;
-  float segundos;
+    float corrienteQ1;
+    float corrienteQ2;
+    float segundos;
+    //valores iniciales
+    float temperatura1Anterior=20;
+    float temperatura2Anterior=20;
+    float corriente1Anterior=0.065;
+    float corriente2Anterior=0.065;
 
-  float temperatura1Anterior=0;
-  float temperatura2Anterior=0;
-  float corriente1Anterior=0;
-  float corriente2Anterior=0;
-  const float alpha=0.8;
+    const float alphaTemperatura=0.8;
+    const float alphaCorriente=0.05;
 //
 
 //funciones para mqtt
@@ -248,21 +253,25 @@ void loop() {
     //sensor
     //mediciones del los sensores
       sensors1.requestTemperatures();  
-      temp1= sensors1.getTempCByIndex(0)*alpha+(1-alpha)*temperatura1Anterior;
+      temp1= sensors1.getTempCByIndex(0)*alphaTemperatura+(1-alphaTemperatura)*temperatura1Anterior;
       temperatura1Anterior=temp1; 
 
       sensors2.requestTemperatures();   //Se envía el comando para leer la temperatura
-      temp2= sensors2.getTempCByIndex(0)*alpha+(1-alpha)*temperatura2Anterior; //Se obtiene la temperatura en ºC del sensor 2
+      temp2= sensors2.getTempCByIndex(0)*alphaTemperatura+(1-alphaTemperatura)*temperatura2Anterior; //Se obtiene la temperatura en ºC del sensor 2
       temperatura2Anterior=temp2; 
       
       segundos=millis()/1000;
 
+      /*el adc se le aplico la ecuación de la recta para que las mediciones fueran acortes a los valores medidos 1.17(medición)+0.065
+      esto se saca midiendo la corriente en cada porcentaje de pwm y que tan cerca esta de las mediciones en los puntos de prueba.
+      usarlo si lo requiere, ya que nos enfocamos más en temas de temperatura
+      */
       int Adc1=analogRead(corriente1);
-      corrienteQ1=(((Adc1*3.3)/4096)+0.1)*alpha+(1-alpha)*corriente1Anterior;
+      corrienteQ1=((((Adc1*3.3)/4096)*1.17+0.065)*alphaCorriente+(1-alphaCorriente)*corriente1Anterior);
       corriente1Anterior=corrienteQ1;
 
       int Adc2=analogRead(corriente2);
-      corrienteQ2=(((Adc2*3.3)/4096)+0.1)*alpha+(1-alpha)*corriente2Anterior;
+      corrienteQ2=((((Adc2*3.3)/4096)*1.17+0.065)*alphaCorriente+(1-alphaCorriente)*corriente2Anterior);
       corriente2Anterior=corrienteQ2;
   //fin prueba
 
@@ -275,15 +284,7 @@ void loop() {
       clienteMQTT.publish(data_IQ1, String(corrienteQ1));
       clienteMQTT.publish(data_IQ2, String(corrienteQ2));
       clienteMQTT.publish(data_time, String(segundos));
-    
   }
   //imprimir datos en la pantalla oled
      pantallaOled();
-
-  
-  
 }
-
-
-    
-
