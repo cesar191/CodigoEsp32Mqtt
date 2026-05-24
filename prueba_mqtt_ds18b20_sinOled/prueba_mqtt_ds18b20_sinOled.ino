@@ -75,11 +75,14 @@
   float corrienteQ2;
   float segundos;
 
-  float temperatura1Anterior=0;
-  float temperatura2Anterior=0;
-  float corriente1Anterior=0;
-  float corriente2Anterior=0;
-  const float alpha=0.8;
+  //valores iniciales
+  float temperatura1Anterior=20;
+  float temperatura2Anterior=20;
+  float corriente1Anterior=0.065;
+  float corriente2Anterior=0.065;
+
+   const float alphaTemperatura=0.8;
+   const float alphaCorriente=0.05;
 //
 
 //funciones para mqtt
@@ -194,12 +197,16 @@ void loop() {
       
       segundos=millis()/1000;
 
+       /*el adc se le aplico la ecuación de la recta para que las mediciones fueran acortes a los valores medidos 1.17(medición)+0.065
+      esto se saca midiendo la corriente en cada porcentaje de pwm y que tan cerca esta de las mediciones en los puntos de prueba.
+      usarlo si lo requiere, ya que nos enfocamos más en temas de temperatura
+      */
       int Adc1=analogRead(corriente1);
-      corrienteQ1=(((Adc1*3.3)/4096)+0.1)*alpha+(1-alpha)*corriente1Anterior;
+      corrienteQ1=((((Adc1*3.3)/4096)*1.17+0.065)*alphaCorriente+(1-alphaCorriente)*corriente1Anterior);
       corriente1Anterior=corrienteQ1;
 
       int Adc2=analogRead(corriente2);
-      corrienteQ2=(((Adc2*3.3)/4096)+0.1)*alpha+(1-alpha)*corriente2Anterior;
+      corrienteQ2=((((Adc2*3.3)/4096)*1.17+0.065)*alphaCorriente+(1-alphaCorriente)*corriente2Anterior);
       corriente2Anterior=corrienteQ2;
   //fin prueba
 
