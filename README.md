@@ -14,7 +14,7 @@ Ubicada en las carpetas `prueba_mqtt_ds18b20` y `prueba_mqtt_ds18b20_sinOled`.
 ### 2. 🔬 Versión Experimental (`ESP32BrokerTesisUnNucleo`)
 Ubicada en la carpeta `ESP32BrokerTesisUnNucleo`.
 * **Estado:** En fase de experimentación y optimización arquitectónica.
-* **Objetivo técnico:** Migración obligatoria hacia una arquitectura de **Dos Núcleos (Dual Core)** utilizando las tareas en paralelo de FreeRTOS (`xTaskCreatePinnedToCore`).
+* **Objetivo técnico:** Migración obligatoria hacia una arquitectura de **Dos Núcleos (Dual Core)** utilizando las tareas en paralelo de FreeRTOS (`xTaskCreatePinnedToCore`), obliga usar la oled para conocer la dirección ip del ESP32.
 * **Razón del cambio:** El procesamiento simultáneo de la lógica de control, las lecturas de hardware y la gestión de la red saturan el ciclo principal del microcontrolador cuando corre en un solo núcleo. Se exige pasar a dos núcleos para independizar y estabilizar por completo el envío masivo de datos sin interferir con las tareas de control de potencia.
 
 ---
