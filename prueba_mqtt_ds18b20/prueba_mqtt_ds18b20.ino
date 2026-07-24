@@ -1,30 +1,3 @@
-/*
-  Pines que se usan sin problema del wifi
-    13(o),14(o),16(x)x,17(x)x,18(o),19(o),21(o),22(o),23(o),25(o),26(o),27(o),32(o),33(o)
-  pines PWM:
-  - d13 para el Q1
-  - d12 para el Q2-->16
-  - d35 para el ventilador 1-->32
-  - d34 para el ventilador  2-->33
-  sensor:
-  - D14 para Temperatura 1
-  - D27 para Temperatura 2
-  alarma:
-  -d26 led1
-  -d25 led2
-  corriente analoga:
-  -d35 Q1
-  -d34 Q2
-  I2C:
-  -d21 SDA
-  -d22 SCL
-  SPI:
-  -d23 MOSI
-  -d19 MISO
-  -d18 SCK
-  -d15 SS-->17
-  
-*/
 //librerias
   //librerias para el wifi y mqtt
     #include <WiFi.h>
@@ -34,19 +7,18 @@
   //libreriras para ds18b20
     #include <OneWire.h>                  
     #include <DallasTemperature.h>
-  //libreias i2c y oled
+  //libreias i2c, oled, SPI
     #include <SPI.h>//para cuando se usa mosi, miso, clk, ss en el caso del sd
     #include <Wire.h>
     #include <Adafruit_GFX.h>
     #include <Adafruit_SSD1306.h>
+    #include <SD.h>
 //variables
   //cliente mqtt 
     WiFiMulti wifiMulti;
     WiFiClient net;
     MQTTClient clienteMQTT;
-
     unsigned long tiempoAnt = 0;
-
   //establece los pines para los sensores
     OneWire ourWire1(14);                
     OneWire ourWire2(27);               
@@ -79,7 +51,7 @@
   //parametros para el filtro de media exponencial
     float temp1;
     float temp2;
-    int resolucionTemperatura=12;
+    int resolucionTemperatura=9;
 
     float corrienteQ1;
     float corrienteQ2;
@@ -142,18 +114,17 @@
 
   void conectar() {
     while (wifiMulti.run() != WL_CONNECTED) {
-    delay(500);
+    //delay(500);
     }
     // while (!client.connect(NombreESP, "public", "public")) {
     while (!clienteMQTT.connect(esp_name)) {
-      delay(500);
+      //delay(500);
     }
     clienteMQTT.subscribe("test/datos/#");
   }
 
 void pantallaOled(){
-    //imprimir mensajes oled poe renglon en el tamaño de letra minimo es de 8 pixeles
-  
+      //imprimir mensajes oled poe renglon en el tamaño de letra minimo es de 8 pixeles=
     display.clearDisplay();         // Borra la pantalla
     //mostrar ip
     display.setTextSize(1);         
@@ -168,44 +139,43 @@ void pantallaOled(){
     display.print("T2: "); 
     display.print(temp2);
     //mostrar PWM
-    display.setCursor(0,16);       // (X,Y) . (Horizontal, Vertical)
+    display.setCursor(0,16);       
     display.print("Q1: ");  
     display.print(dutyCycle1);
-    display.setCursor(64,16);       // (X,Y) . (Horizontal, Vertical)
+    display.setCursor(64,16);       
     display.print("Q2: ");  
     display.print(dutyCycle2);
     //mostar led
-    display.setCursor(0,24);       // (X,Y) . (Horizontal, Vertical)
+    display.setCursor(0,24);      
     display.print("L1: "); 
     display.print(estadoled1);
-    display.setCursor(64,24);       // (X,Y) . (Horizontal, Vertical)
+    display.setCursor(64,24);       
     display.print("L2: ");  
     display.print(estadoled2);
     //mostar ventilador
-    display.setCursor(0,32);       // (X,Y) . (Horizontal, Vertical)
+    display.setCursor(0,32);       
     display.print("V1: ");  
     display.print(estadoventilador1);
-    display.setCursor(64,32);       // (X,Y) . (Horizontal, Vertical)
+    display.setCursor(64,32);       
     display.print("V2: ");  
     display.print(estadoventilador2);
     //mostar corriente
-    display.setCursor(0,40);       // (X,Y) . (Horizontal, Vertical)
+    display.setCursor(0,40);       
     display.print("I1: ");  
     display.print(corrienteQ1);
-    display.setCursor(64,40);       // (X,Y) . (Horizontal, Vertical)
+    display.setCursor(64,40);      
     display.print("I2: ");  
     display.print(corrienteQ2);
     //tiempo
-    display.setCursor(0,48);       // (X,Y) . (Horizontal, Vertical)
+    display.setCursor(0,48);      
     display.print("tiempo: ");  
     display.print(segundos);
-    display.display();              // Muestra el Texto en la pantalla
-    
+    display.display();
 }
 
 
 void setup() {
-    //Serial.begin(115200);
+    Serial.begin(115200);
     wifiMulti.addAP(ssid, pass),
     //wifiMulti.addAP(ssid1, pass1);
     wifiMulti.addAP(ssid2, pass2);
@@ -232,37 +202,37 @@ void setup() {
     pinMode(ventilador1,OUTPUT);
     pinMode(ventilador2,OUTPUT);
   //incialisamos la pantalla oled
-    display.begin(SSD1306_SWITCHCAPVCC, 0x3C); // Otra direccion es la 0x3D
-    display.clearDisplay();
-    display.setTextColor(SSD1306_WHITE);   
+    if(display.begin(SSD1306_SWITCHCAPVCC, 0x3C)){
+      display.begin(SSD1306_SWITCHCAPVCC, 0x3C); // Otra direccion es la 0x3D
+      display.clearDisplay();
+      display.setTextColor(SSD1306_WHITE);
+    }
+       
   
 }
 
 void loop() {
   clienteMQTT.loop();
-  delay(10);
+  //delay(10);
   if (!clienteMQTT.connected()) {
     conectar();
   }
-
   //prueba
    //PWM
     ledcWrite(q1, dutyCycle1*2.55);
-    ledcWrite(q2, dutyCycle2*2.55);
-        
+    ledcWrite(q2, dutyCycle2*2.55);        
     //sensor
     //mediciones del los sensores
       sensors1.requestTemperatures();  
       temp1= sensors1.getTempCByIndex(0)*alphaTemperatura+(1-alphaTemperatura)*temperatura1Anterior;
       temperatura1Anterior=temp1; 
-
       sensors2.requestTemperatures();   //Se envía el comando para leer la temperatura
       temp2= sensors2.getTempCByIndex(0)*alphaTemperatura+(1-alphaTemperatura)*temperatura2Anterior; //Se obtiene la temperatura en ºC del sensor 2
       temperatura2Anterior=temp2; 
       
       segundos=millis()/1000;
 
-      /*el adc se le aplico la ecuación de la recta para que las mediciones fueran acortes a los valores medidos 1.17(medición)+0.065
+      /*el adc se le aplico la ecuación de la recta para que las mediciones fueran acordes a los valores medidos 1.17(medición)+0.065
       esto se saca midiendo la corriente en cada porcentaje de pwm y que tan cerca esta de las mediciones en los puntos de prueba.
       usarlo si lo requiere, ya que nos enfocamos más en temas de temperatura
       */
@@ -274,17 +244,17 @@ void loop() {
       corrienteQ2=((((Adc2*3.3)/4096)*1.17+0.065)*alphaCorriente+(1-alphaCorriente)*corriente2Anterior);
       corriente2Anterior=corrienteQ2;
   //fin prueba
-
-
-  if (millis() - tiempoAnt >= 500) {
-    tiempoAnt = millis(); 
-  //enviar datos a mqtt 
       clienteMQTT.publish(data_temp1, String(temp1));
       clienteMQTT.publish(data_temp2, String(temp2));
       clienteMQTT.publish(data_IQ1, String(corrienteQ1));
       clienteMQTT.publish(data_IQ2, String(corrienteQ2));
       clienteMQTT.publish(data_time, String(segundos));
-  }
   //imprimir datos en la pantalla oled
-     pantallaOled();
+    pantallaOled();
+    if(millis()-tiempoAnt>=5000){
+      tiempoAnt=millis();
+      if(display.begin(SSD1306_SWITCHCAPVCC, 0x3C)){
+        display.clearDisplay();
+      }
+    }
 }
