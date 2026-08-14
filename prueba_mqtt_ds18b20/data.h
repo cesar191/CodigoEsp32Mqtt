@@ -10,7 +10,7 @@ const char* ssid2="Cesar191";
 const char* pass2="RocioAndres23";
 
 //                                      //hogar        //usco          //movil
-const char* broker="192.168.1.4";     //192.168.1.4    172.16.66.231   10.99.200.233
+const char* broker="192.168.100.72";     //192.168.1.4    172.16.66.231   10.99.200.233
 const int puerto=1883;
 const char* user="";
 const char* mq_pass="";
