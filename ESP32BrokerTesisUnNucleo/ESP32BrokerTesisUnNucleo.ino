@@ -191,9 +191,11 @@ void setup() {
     pinMode(ventilador1,OUTPUT);
     pinMode(ventilador2,OUTPUT);
   //incialisamos la pantalla oled
-    display.begin(SSD1306_SWITCHCAPVCC, 0x3C); // Otra direccion es la 0x3D
-    display.clearDisplay();
-    display.setTextColor(SSD1306_WHITE);
+    if(display.begin(SSD1306_SWITCHCAPVCC, 0x3C)){
+      display.begin(SSD1306_SWITCHCAPVCC, 0x3C); // Otra direccion es la 0x3D
+      display.clearDisplay();
+      display.setTextColor(SSD1306_WHITE);
+    }
 }
 void loop() {
   // put your main code here, to run repeatedly:
@@ -231,5 +233,11 @@ void loop() {
       mqtt.publish(data_time, String(segundos));
   }
   //imprimir datos en la pantalla oled
-     pantallaOled();
+    pantallaOled();
+    if(millis()-tiempoAnt>=5000){
+      tiempoAnt=millis();
+      if(display.begin(SSD1306_SWITCHCAPVCC, 0x3C)){
+        display.clearDisplay();
+      }
+    }
 } 
