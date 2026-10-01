@@ -7,9 +7,10 @@ Este repositorio contiene el firmware desarrollado para el módulo **ESP32**. El
 El código está dividido en dos vertientes principales según su estado de desarrollo y estabilidad:
 
 ### 1. 🚀 Versión Estable e Implementada
-Ubicada en las carpetas `prueba_mqtt_ds18b20` y `prueba_mqtt_ds18b20_sinOled`.
+Ubicada en las carpetas `ESP32ClienteTesisOptimo` y `ESP32ClienteTesisOptimoSinOLED`.
 * **Estado:** Completamente testeada, validada y funcional.
 * **Características:** Realiza la lectura periódica de variables físicas y atiende las suscripciones/publicaciones MQTT de forma secuencial en un ciclo estable.
+* **Manejo de PWM:** se verifico que el esp32 puede trabajar 4 canales de PWM a diferentes frecuencias, donde su comportamiento al PWM difiere.
 
 ### 2. 🔬 Versión Experimental (`ESP32BrokerTesisUnNucleo`)
 Ubicada en la carpeta `ESP32BrokerTesisUnNucleo`.
