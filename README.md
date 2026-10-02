@@ -2,11 +2,11 @@
 
 Este repositorio contiene el firmware desarrollado para el módulo **ESP32**. El sistema implementa comunicación en tiempo real mediante el protocolo MQTT para la adquisición de datos de temperatura (sensores DS18B20) y el control de actuadores (PWM para transistores de potencia).
 
-## 📂 Estructura del Repositorio
+## Estructura del Repositorio
 
 Para un mejor manejo de los códigos y casos de uso, el proyecto se ha organizado en dos carpetas principales:
 
-### 1. 🚀 `Clientes/` (Versión Estable)
+### 1. `Clientes/` (Versión Estable)
 Contiene el código donde el ESP32 actúa **únicamente como cliente MQTT**, conectándose a un broker externo.
 * `ESP32ClienteTesisOptimo/`: Versión completa con pantalla OLED.
 * `ESP32ClienteTesisOptimoSinOLED/`: Versión ligera sin pantalla.
@@ -16,19 +16,18 @@ Contiene el código donde el ESP32 actúa **únicamente como cliente MQTT**, con
 * Realiza la lectura periódica de variables físicas y atiende MQTT de forma estable.
 * **Manejo de PWM:** El ESP32 puede trabajar 4 canales de PWM a diferentes frecuencias.
 
-### 2. 🔬 `Brokers/` (Versión Experimental Dual)
+### 2. `Brokers/` (Versión Experimental Dual)
 Contiene el código donde el ESP32 aloja su propio **Broker MQTT local** (`PicoMQTT`) y actúa como servidor.
 * `ESP32BrokerTesisUnNucleo/`: Versión base (un solo núcleo) optimizada temporalmente.
 * `ESP32BrokerTesisobbleNucleo/`: Versión migrada a **Dos Núcleos (Dual Core)** con FreeRTOS.
-* `esp32BrokerUserPass/`: Pruebas de autenticación.
+* `esp32BrokerUserPass/`: Pruebas de autenticación con usuario y contraseña.
 
 **Características de los Brokers Locales:**
 * **Objetivo:** Uso de `xTaskCreatePinnedToCore` para evitar cuellos de botella al procesar WiFi, lecturas físicas y el broker en un solo núcleo.
-* Requiere usar la OLED para conocer la dirección IP del servidor ESP32.
 
 ---
 
-## 🔒 Manejo Seguro de Datos
+##  Manejo Seguro de Datos
 Para garantizar la seguridad de las credenciales de red (WiFi) y parámetros de conexión:
 * Se ha implementado un archivo `.gitignore` en la raíz del proyecto.
 * **Importante:** Todos los archivos llamados `data.h`, `secrets.h` o `credentials.h` serán **ignorados** por Git. 
@@ -63,7 +62,7 @@ const char* msg_ventilador2 = "test/datos/ventilador2";
 
 ---
 
-## ⚠️ Alertas Críticas de Estabilidad e Interfaz
+##  Alertas Críticas de Estabilidad e Interfaz
 
 Al operar el dispositivo o trabajar con la versión experimental, se deben tener bajo estricta consideración las siguientes advertencias de red:
 
@@ -72,9 +71,8 @@ Al operar el dispositivo o trabajar con la versión experimental, se deben tener
 
 ---
 
-## 📚 Librerías Utilizadas (Incluidas en el repositorio)
+## Librerías Utilizadas (Incluidas en el repositorio)
 * `PicoMQTT`: Motor del Broker embebido en la placa.
 * `MQTT`: ESP32 como cliente en la conexión del broker MQTT.
 * `DallasTemperature` & `OneWire`: Adquisición digital de los sensores de temperatura DS18B20.
 * `Adafruit_SSD1306` & `Adafruit_GFX`: Control de la interfaz visual del display OLED.
-
