@@ -1,9 +1,0 @@
-dependencies:
-  espressif/arduino-esp32:
-    version: "^3.0.6"
-files:
-  include:
-    - "src/*.cpp"
-    - "src/*.h"
-    - "src/lwmqtt/*.c"
-    - "src/lwmqtt/*.h"

@@ -1,0 +1,19 @@
+# Ignore file for sensitive data
+data.h
+secrets.h
+credentials.h
+
+# Compiled files
+*.elf
+*.bin
+*.hex
+*.o
+*.obj
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# PlatformIO
+.pio/
+build/
