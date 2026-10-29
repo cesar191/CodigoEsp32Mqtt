@@ -1,83 +1,83 @@
 // Librerías de conectividad y protocolo
-#include "data.h"
-#include <MQTT.h>
-#include <WiFi.h>
-#include <WiFiMulti.h>
+  #include <WiFi.h>
+  #include <WiFiClientSecure.h>
+  #include <WiFiClient.h>
+  #include <MQTT.h>
+  #include "data.h"
 
 // Librerías para sensores de temperatura DS18B20
-#include <DallasTemperature.h>
-#include <OneWire.h>
+  #include <OneWire.h>
+  #include <DallasTemperature.h>
 
 // Librerías para pantalla OLED y bus I2C/SPI
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
-#include <SD.h>
-#include <SPI.h>
-#include <Wire.h>
+  #include <SPI.h>
+  #include <Wire.h>
+  #include <Adafruit_GFX.h>
+  #include <Adafruit_SSD1306.h>
 
 // CONFIGURACIÓN DE PINES (uint8_t = 1 byte)
 
-constexpr uint8_t PIN_TEMP_1 = 14;
-constexpr uint8_t PIN_TEMP_2 = 27;
-constexpr uint8_t PIN_ADC_CORRIENTE1 = 35;
-constexpr uint8_t PIN_ADC_CORRIENTE2 = 34;
+  constexpr uint8_t PIN_TEMP_1 = 14;
+  constexpr uint8_t PIN_TEMP_2 = 27;
+  constexpr uint8_t PIN_ADC_CORRIENTE1 = 35;
+  constexpr uint8_t PIN_ADC_CORRIENTE2 = 34;
 
-constexpr uint8_t PIN_LED1 = 26;
-constexpr uint8_t PIN_LED2 = 25;
-constexpr uint8_t PIN_VENTILADOR1 = 33;
-constexpr uint8_t PIN_VENTILADOR2 = 32;
+  constexpr uint8_t PIN_LED1 = 26;
+  constexpr uint8_t PIN_LED2 = 25;
+  constexpr uint8_t PIN_VENTILADOR1 = 33;
+  constexpr uint8_t PIN_VENTILADOR2 = 32;
 
-constexpr uint8_t PIN_PWM_Q1 = 13;
-constexpr uint8_t PIN_PWM_Q2 = 12;
+  constexpr uint8_t PIN_PWM_Q1 = 13;
+  constexpr uint8_t PIN_PWM_Q2 = 12;
 
 // PARÁMETROS DE CONFIGURACIÓN
-constexpr uint32_t FREC_PWM_Q1 = 1000;
-constexpr uint32_t FREC_PWM_Q2 = 100000;
-constexpr uint32_t FREC_PWM_VENT1 = 10;
-constexpr uint32_t FREC_PWM_VENT2 = 5;
-constexpr uint8_t RESOLUCION_PWM = 8;
-constexpr uint8_t RESOLUCION_TEMP = 9;
+  constexpr uint32_t FREC_PWM_Q1 = 500;
+  constexpr uint32_t FREC_PWM_Q2 = 10000;
+  constexpr uint32_t FREC_PWM_VENT1 = 5;
+  constexpr uint32_t FREC_PWM_VENT2 = 5;
+  constexpr uint8_t  RESOLUCION_PWM = 8;
+  constexpr uint8_t  RESOLUCION_TEMP = 9;
 
-constexpr float ALPHA_TEMP = 0.8f;
-constexpr float ALPHA_CORRIENTE = 0.05f;
+  constexpr float ALPHA_TEMP = 0.8f;
+  constexpr float ALPHA_CORRIENTE = 0.1f;
 
 // INSTANCIAS DE OBJETOS
-WiFiMulti wifiMulti;
-WiFiClient netClient;
-MQTTClient clienteMqtt;
+  WiFiClientSecure netClientSecure;
+  WiFiClient netClient;
+  MQTTClient clienteMqtt;
 
-OneWire wireTemp1(PIN_TEMP_1);
-OneWire wireTemp2(PIN_TEMP_2);
-DallasTemperature sensorTemp1(&wireTemp1);
-DallasTemperature sensorTemp2(&wireTemp2);
+  OneWire wireTemp1(PIN_TEMP_1);
+  OneWire wireTemp2(PIN_TEMP_2);
+  DallasTemperature sensorTemp1(&wireTemp1);
+  DallasTemperature sensorTemp2(&wireTemp2);
 
-Adafruit_SSD1306 display(128, 64, &Wire);
+  Adafruit_SSD1306 display(128, 64, &Wire);
 
 // VARIABLES GLOBALES
-uint32_t tiempoAnteriorMs = 0;
-uint32_t tiempoAnterior2Ms = 0;
-uint32_t segundos = 0;
+  uint32_t tiempoAnteriorMs = 0;
+  uint32_t tiempoAnterior2Ms = 0;
+  uint32_t segundos = 0;
 // Ciclos de trabajo (0 - 100%)
-uint8_t dutyCycleQ1 = 0;
-uint8_t dutyCycleQ2 = 0;
-uint8_t dutyCycleVent1 = 0;
-uint8_t dutyCycleVent2 = 0;
+  uint8_t dutyCycleQ1 = 0;
+  uint8_t dutyCycleQ2 = 0;
+  uint8_t dutyCycleVent1 = 0;
+  uint8_t dutyCycleVent2 = 0;
 // Estados de actuadores
-String estadoLed1 = "off";
-String estadoLed2 = "off";
-String estadoVentilador1 = "off";
-String estadoVentilador2 = "off";
+  String estadoLed1 = "off";
+  String estadoLed2 = "off";
+  String estadoVentilador1 = "off";
+  String estadoVentilador2 = "off";
 
 // Mediciones y estados de filtros
-float temp1 = 0.0f;
-float temp2 = 0.0f;
-float corrienteQ1 = 0.0f;
-float corrienteQ2 = 0.0f;
+  float temp1 = 0.0f;
+  float temp2 = 0.0f;
+  float corrienteQ1 = 0.0f;
+  float corrienteQ2 = 0.0f;
 
-float temp1Anterior = 0.0f;
-float temp2Anterior = 0.0f;
-float corriente1Anterior = 0.0f;
-float corriente2Anterior = 0.0f;
+  float temp1Anterior = 0.0f;
+  float temp2Anterior = 0.0f;
+  float corriente1Anterior = 0.0f;
+  float corriente2Anterior = 0.0f;
 
 // FUNCIONES Y RUTINAS
 
@@ -85,24 +85,28 @@ void procesarMensajeMQTT(String topic, String payload) {
   if (topic == TOPIC_SUB_PWM1) {
     dutyCycleQ1 = payload.toInt();
     ledcWrite(PIN_PWM_Q1, dutyCycleQ1 * 2.55f);
-  } else if (topic == TOPIC_SUB_PWM2) {
+  }
+  else if (topic == TOPIC_SUB_PWM2) {
     dutyCycleQ2 = payload.toInt();
     ledcWrite(PIN_PWM_Q2, dutyCycleQ2 * 2.55f);
-  } else if (topic == TOPIC_SUB_LED1) {
+  }
+  else if (topic == TOPIC_SUB_LED1) {
     estadoLed1 = payload;
     if (payload == "on") {
       digitalWrite(PIN_LED1, HIGH);
     } else if (payload == "off") {
       digitalWrite(PIN_LED1, LOW);
     }
-  } else if (topic == TOPIC_SUB_LED2) {
+  } 
+  else if (topic == TOPIC_SUB_LED2) {
     estadoLed2 = payload;
     if (payload == "on") {
       digitalWrite(PIN_LED2, HIGH);
     } else if (payload == "off") {
       digitalWrite(PIN_LED2, LOW);
     }
-  } else if (topic == TOPIC_SUB_VENT1) {
+  } 
+  else if (topic == TOPIC_SUB_VENT1) {
     estadoVentilador1 = payload;
     if (payload == "on") {
       ledcWrite(PIN_VENTILADOR1, 255);
@@ -113,7 +117,8 @@ void procesarMensajeMQTT(String topic, String payload) {
       dutyCycleVent1 = payload.toInt();
       ledcWrite(PIN_VENTILADOR1, dutyCycleVent1 * 2.55f);
     }
-  } else if (topic == TOPIC_SUB_VENT2) {
+  } 
+  else if (topic == TOPIC_SUB_VENT2) {
     estadoVentilador2 = payload;
     if (payload == "on") {
       ledcWrite(PIN_VENTILADOR2, 255);
@@ -123,16 +128,22 @@ void procesarMensajeMQTT(String topic, String payload) {
       dutyCycleVent2 = payload.toInt();
       ledcWrite(PIN_VENTILADOR2, dutyCycleVent2 * 2.55f);
     }
-  }
+  } 
 }
 
 void conectarRedYBroker() {
-  while (wifiMulti.run() != WL_CONNECTED) {
-    // Espera conexión Wi-Fi
-  }
+  WiFi.begin(SSID,PASS);
 
-  while (!clienteMqtt.connect(ESP_CLIENT_NAME)) {
-    // Espera conexión al Broker MQTT
+  clienteMqtt.begin(BROKER_MQTT,PUERTO_MQTT,netClient);
+  clienteMqtt.onMessage(procesarMensajeMQTT);
+
+  while (WiFi.status() != WL_CONNECTED) {  
+  
+  }
+  //netClient.setInsecure();
+  
+  while (!clienteMqtt.connect(ESP_CLIENT_NAME,USER_MQTT,PASS_MQTT)) {
+
   }
 
   clienteMqtt.subscribe("test/datos/#");
@@ -209,13 +220,6 @@ void actualizarPantallaOled() {
 
 void setup() {
 
-  wifiMulti.addAP(SSID_HOGAR, PASS_HOGAR);
-  wifiMulti.addAP(SSID_MOVIL, PASS_MOVIL);
-  WiFi.mode(WIFI_STA);
-
-  clienteMqtt.begin(BROKER_MQTT, netClient);
-  clienteMqtt.onMessage(procesarMensajeMQTT);
-
   conectarRedYBroker();
 
   // Inicialización de sensores de temperatura
@@ -223,6 +227,8 @@ void setup() {
   sensorTemp1.setResolution(RESOLUCION_TEMP);
   sensorTemp2.begin();
   sensorTemp2.setResolution(RESOLUCION_TEMP);
+
+  analogReadResolution(12);
 
   // Configuración PWM
   ledcAttach(PIN_PWM_Q1, FREC_PWM_Q1, RESOLUCION_PWM);
@@ -246,36 +252,35 @@ void loop() {
 
   // Lectura y filtrado exponencial de temperatura
   sensorTemp1.requestTemperatures();
-  temp1 = (sensorTemp1.getTempCByIndex(0) * ALPHA_TEMP) +
-          ((1.0f - ALPHA_TEMP) * temp1Anterior);
+  temp1 = (sensorTemp1.getTempCByIndex(0) * ALPHA_TEMP) + ((1.0f - ALPHA_TEMP) * temp1Anterior);
   temp1Anterior = temp1;
 
   sensorTemp2.requestTemperatures();
-  temp2 = (sensorTemp2.getTempCByIndex(0) * ALPHA_TEMP) +
-          ((1.0f - ALPHA_TEMP) * temp2Anterior);
+  temp2 = (sensorTemp2.getTempCByIndex(0) * ALPHA_TEMP) + ((1.0f - ALPHA_TEMP) * temp2Anterior);
   temp2Anterior = temp2;
 
   // Lectura y filtrado exponencial de corriente por ADC
   const int adc1 = analogRead(PIN_ADC_CORRIENTE1);
-  corrienteQ1 = ((((adc1 * 3.3f) / 4096.0f)) * ALPHA_CORRIENTE) +
-                ((1.0f - ALPHA_CORRIENTE) * corriente1Anterior);
+  //const int adc1 = analogRead(PIN_ADC_CORRIENTE1);
+  corrienteQ1 = ((((adc1 * 3.3f) / 4096.0f)) * ALPHA_CORRIENTE) + ((1.0f - ALPHA_CORRIENTE) * corriente1Anterior);
   corriente1Anterior = corrienteQ1;
-
+  
   const int adc2 = analogRead(PIN_ADC_CORRIENTE2);
-  corrienteQ2 = ((((adc2 * 3.3f) / 4096.0f)) * ALPHA_CORRIENTE) +
-                ((1.0f - ALPHA_CORRIENTE) * corriente2Anterior);
+  //const int adc2 = analogRead(PIN_ADC_CORRIENTE2);
+  corrienteQ2 = ((((adc2 * 3.3f) / 4096.0f)) * ALPHA_CORRIENTE) + ((1.0f - ALPHA_CORRIENTE) * corriente2Anterior);
   corriente2Anterior = corrienteQ2;
 
   // Publicación de telemetría por MQTT
-  if (millis() - tiempoAnterior2Ms >= 1000) {
+ // if(millis()-tiempoAnterior2Ms>=1000){
     segundos = millis() / 1000.0f;
-    tiempoAnterior2Ms = millis();
+    
     clienteMqtt.publish(TOPIC_PUB_TEMP1, String(temp1));
     clienteMqtt.publish(TOPIC_PUB_TEMP2, String(temp2));
-    clienteMqtt.publish(TOPIC_PUB_IQ1, String(corrienteQ1));
-    clienteMqtt.publish(TOPIC_PUB_IQ2, String(corrienteQ2));
-    clienteMqtt.publish(TOPIC_PUB_TIME, String(segundos));
-  }
+    clienteMqtt.publish(TOPIC_PUB_IQ1,   String(corrienteQ1));
+    clienteMqtt.publish(TOPIC_PUB_IQ2,   String(corrienteQ2));
+    clienteMqtt.publish(TOPIC_PUB_TIME,  String(segundos));
+  //}
+  
 
   // Renderizado en pantalla OLED
   actualizarPantallaOled();
@@ -288,7 +293,4 @@ void loop() {
     }
   }
 
-  if (!clienteMqtt.connected()) {
-    conectarRedYBroker();
-  }
 }
