@@ -246,9 +246,10 @@ void setup() {
 
 }
 void loop() {
-  // put your main code here, to run repeatedly:
+  
   mqtt.loop();
-  // prueba
+  conectarRedYBroker();
+
   // Lectura y filtrado exponencial de temperatura
   sensorTemp1.requestTemperatures();
   temp1 = (sensorTemp1.getTempCByIndex(0) * ALPHA_TEMP) + ((1.0f - ALPHA_TEMP) * temp1Anterior);
@@ -269,7 +270,7 @@ void loop() {
   corrienteQ2 = ((((adc2 * 3.3f) / 4096.0f)) * ALPHA_CORRIENTE) + ((1.0f - ALPHA_CORRIENTE) * corriente2Anterior);
   corriente2Anterior = corrienteQ2;
    // Publicación de telemetría por MQTT
- // if(millis()-tiempoAnterior2Ms>=1000){
+  if(millis()-tiempoAnterior2Ms>=1000){
     segundos = millis() / 1000.0f;
     
     mqtt.publish(TOPIC_PUB_TEMP1, String(temp1));
@@ -277,7 +278,7 @@ void loop() {
     mqtt.publish(TOPIC_PUB_IQ1,   String(corrienteQ1));
     mqtt.publish(TOPIC_PUB_IQ2,   String(corrienteQ2));
     mqtt.publish(TOPIC_PUB_TIME,  String(segundos));
-  //}
+  }
    // Renderizado en pantalla OLED
   actualizarPantallaOled();
 

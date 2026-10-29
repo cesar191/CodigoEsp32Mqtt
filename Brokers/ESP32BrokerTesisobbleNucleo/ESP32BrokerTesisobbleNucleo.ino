@@ -1,299 +1,457 @@
-// Librerías y variables
-#include <WiFi.h>
-#include <WiFiMulti.h>
-#include <PicoMQTT.h>
+// ─────────────────────────────────────────────────────────
+//  ESP32 Broker MQTT + Control de Hardware (Doble Núcleo)
+//  PicoMQTT::Server corre directamente en el ESP32
+// ─────────────────────────────────────────────────────────
 #include "data.h"
+#include <PicoMQTT.h>
+#include <WiFi.h>
+#include <WiFiClient.h>
 
-#include <OneWire.h>                  
+#include <OneWire.h>
 #include <DallasTemperature.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-// Instancias de conectividad
-WiFiMulti wifiMulti;
-PicoMQTT::Server mqtt;
+// ─────────────────────────────────────────────────────────
+//  BROKER MQTT SEGURO (con autenticación)
+// ─────────────────────────────────────────────────────────
+class SecureBroker : public PicoMQTT::Server {
+protected:
+  PicoMQTT::ConnectReturnCode auth(const char *client_id,
+                                    const char *username,
+                                    const char *password) override {
+    // Rechazar client_id muy cortos
+    if (String(client_id).length() < 3) {
+      return PicoMQTT::CRC_IDENTIFIER_REJECTED;
+    }
+    // Requerir usuario y contraseña
+    if (!username || !password) {
+      return PicoMQTT::CRC_NOT_AUTHORIZED;
+    }
+    // Verificar credenciales
+    const bool ok =
+        (String(username) == "usco" && String(password) == "12345678") ||
+        (String(username) == "cesar" && String(password) == "1234567890");
+    return ok ? PicoMQTT::CRC_ACCEPTED
+              : PicoMQTT::CRC_BAD_USERNAME_OR_PASSWORD;
+  }
+};
 
-// Handle para las tareas de FreeRTOS
-TaskHandle_t TareaConectividadHandle = NULL;
-TaskHandle_t TareaControlHandle = NULL;
+SecureBroker mqtt;
 
-// Mutex para proteger variables compartidas entre núcleos
-SemaphoreHandle_t xMutex = NULL;
+// ─────────────────────────────────────────────────────────
+//  CONFIGURACIÓN DE PINES
+// ─────────────────────────────────────────────────────────
+constexpr uint8_t PIN_TEMP_1 = 14;
+constexpr uint8_t PIN_TEMP_2 = 27;
+constexpr uint8_t PIN_ADC_CORRIENTE1 = 35;
+constexpr uint8_t PIN_ADC_CORRIENTE2 = 34;
+constexpr uint8_t PIN_LED1 = 26;
+constexpr uint8_t PIN_LED2 = 25;
+constexpr uint8_t PIN_VENTILADOR1 = 33;
+constexpr uint8_t PIN_VENTILADOR2 = 32;
+constexpr uint8_t PIN_PWM_Q1 = 13;
+constexpr uint8_t PIN_PWM_Q2 = 12;
 
-// Pines sensores DS18B20
-OneWire ourWire1(14);                
-OneWire ourWire2(27);               
-DallasTemperature sensors1(&ourWire1); 
-DallasTemperature sensors2(&ourWire2);
+// ─────────────────────────────────────────────────────────
+//  PARÁMETROS DE CONFIGURACIÓN
+// ─────────────────────────────────────────────────────────
+constexpr uint32_t FREC_PWM_Q1 = 500;
+constexpr uint32_t FREC_PWM_Q2 = 10000;
+constexpr uint32_t FREC_PWM_VENT1 = 5;
+constexpr uint32_t FREC_PWM_VENT2 = 5;
+constexpr uint8_t RESOLUCION_PWM = 8;
+constexpr uint8_t RESOLUCION_TEMP = 9;
+constexpr float ALPHA_TEMP = 0.8f;
+constexpr float ALPHA_CORRIENTE = 0.1f;
 
-// Pantalla OLED
+// Intervalos de tiempo (ms)
+constexpr uint32_t INTERVALO_PUBLICACION = 1000;
+constexpr uint32_t INTERVALO_OLED = 300;
+constexpr uint32_t INTERVALO_SENSORES_TEMP = 800;
+constexpr uint32_t INTERVALO_SENSORES_ADC = 50;
+constexpr uint32_t TIMEOUT_WIFI = 15000;
+
+// ─────────────────────────────────────────────────────────
+//  INSTANCIAS DE OBJETOS
+// ─────────────────────────────────────────────────────────
+OneWire wireTemp1(PIN_TEMP_1);
+OneWire wireTemp2(PIN_TEMP_2);
+DallasTemperature sensorTemp1(&wireTemp1);
+DallasTemperature sensorTemp2(&wireTemp2);
 Adafruit_SSD1306 display(128, 64, &Wire);
 
-// Pines de hardware
-const int corriente1 = 35;
-const int corriente2 = 34;
-const int led1 = 26;
-const int led2 = 25;
-const int ventilador1 = 33;
-const int ventilador2 = 32;
-const int q1 = 13;
-const int q2 = 12;
+// ─────────────────────────────────────────────────────────
+//  ESTRUCTURA DE DATOS COMPARTIDOS (protegida por mutex)
+// ─────────────────────────────────────────────────────────
+struct DatosSensores {
+  float temp1;
+  float temp2;
+  float corrienteQ1;
+  float corrienteQ2;
+  uint8_t dutyCycleQ1;
+  uint8_t dutyCycleQ2;
+  uint8_t dutyCycleVent1;
+  uint8_t dutyCycleVent2;
+  String estadoLed1;
+  String estadoLed2;
+  String estadoVentilador1;
+  String estadoVentilador2;
+  uint32_t segundos;
+};
 
-// Parámetros PWM
-const int frecuencia = 100000; 
-const int resolucion = 8;
+DatosSensores datos = {0.0f, 0.0f, 0.0f, 0.0f, 0, 0, 0, 0,
+                       "off", "off", "off", "off", 0};
 
-// Variables Globales Compartidas (Protegidas por Mutex)
-int dutyCycle1 = 0;
-int dutyCycle2 = 0;
-float temp1 = 0;
-float temp2 = 0;
-float corrienteQ1 = 0;
-float corrienteQ2 = 0;
-float segundos = 0;
-String estadoled1 = "off";
-String estadoled2 = "off";
-String estadoventilador1 = "off";
-String estadoventilador2 = "off";
+// Variables locales del filtro (solo usadas por SensorTask)
+float temp1Anterior = 0.0f;
+float temp2Anterior = 0.0f;
+float corriente1Anterior = 0.0f;
+float corriente2Anterior = 0.0f;
 
-// Variables locales de control
-const int resolucionTemperatura = 12;
-const float alpha = 0.8;
-float temperatura1Anterior = 0;
-float temperatura2Anterior = 0;
-float corriente1Anterior = 0;
-float corriente2Anterior = 0;
+// ─────────────────────────────────────────────────────────
+//  SINCRONIZACIÓN Y HANDLES DE TAREAS
+// ─────────────────────────────────────────────────────────
+SemaphoreHandle_t xMutexData = NULL;
+TaskHandle_t BrokerTaskHandle = NULL;
+TaskHandle_t SensorTaskHandle = NULL;
+TaskHandle_t DisplayTaskHandle = NULL;
 
-// Callback de MQTT (Manejador de mensajes entrantes)
-void MensajeMQTT(String topic, String payload) {
-  if (xSemaphoreTake(xMutex, portMAX_DELAY) == pdTRUE) {
-    if (topic == msg_pwm1) dutyCycle1 = payload.toInt();
-    if (topic == msg_pwm2) dutyCycle2 = payload.toInt();
-    
-    if (topic == msg_led1) {
-      estadoled1 = payload;
-      digitalWrite(led1, (payload == "on") ? HIGH : LOW);
-    } 
-    if (topic == msg_led2) {
-      estadoled2 = payload;
-      digitalWrite(led2, (payload == "on") ? HIGH : LOW);
-    } 
-    if (topic == msg_ventilador1) {
-      estadoventilador1 = payload;
-      ledcWrite(ventilador1, (payload == "on") ? 255 : 0);
-    } 
-    if (topic == msg_ventilador2) {
-      estadoventilador2 = payload;
-      ledcWrite(ventilador2, (payload == "on") ? 255 : 0);
+// ─────────────────────────────────────────────────────────
+//  CALLBACK MQTT — Mensajes entrantes desde clientes
+// ─────────────────────────────────────────────────────────
+void procesarMensajeMQTT(const char *topicRaw, const char *payloadRaw) {
+  String topic(topicRaw);
+  String payload(payloadRaw);
+
+  if (xSemaphoreTake(xMutexData, pdMS_TO_TICKS(50)) == pdTRUE) {
+    if (topic == TOPIC_SUB_PWM1) {
+      datos.dutyCycleQ1 = payload.toInt();
+      ledcWrite(PIN_PWM_Q1, datos.dutyCycleQ1 * 2.55f);
+    } else if (topic == TOPIC_SUB_PWM2) {
+      datos.dutyCycleQ2 = payload.toInt();
+      ledcWrite(PIN_PWM_Q2, datos.dutyCycleQ2 * 2.55f);
+    } else if (topic == TOPIC_SUB_LED1) {
+      datos.estadoLed1 = payload;
+      digitalWrite(PIN_LED1, (payload == "on") ? HIGH : LOW);
+    } else if (topic == TOPIC_SUB_LED2) {
+      datos.estadoLed2 = payload;
+      digitalWrite(PIN_LED2, (payload == "on") ? HIGH : LOW);
+    } else if (topic == TOPIC_SUB_VENT1) {
+      datos.estadoVentilador1 = payload;
+      if (payload == "on") {
+        ledcWrite(PIN_VENTILADOR1, 255);
+      } else if (payload == "off") {
+        ledcWrite(PIN_VENTILADOR1, 0);
+      } else {
+        datos.dutyCycleVent1 = payload.toInt();
+        ledcWrite(PIN_VENTILADOR1, datos.dutyCycleVent1 * 2.55f);
+      }
+    } else if (topic == TOPIC_SUB_VENT2) {
+      datos.estadoVentilador2 = payload;
+      if (payload == "on") {
+        ledcWrite(PIN_VENTILADOR2, 255);
+      } else if (payload == "off") {
+        ledcWrite(PIN_VENTILADOR2, 0);
+      } else {
+        datos.dutyCycleVent2 = payload.toInt();
+        ledcWrite(PIN_VENTILADOR2, datos.dutyCycleVent2 * 2.55f);
+      }
     }
-    xSemaphoreGive(xMutex);
+    xSemaphoreGive(xMutexData);
   }
 }
 
-void conectar() {
-  while (wifiMulti.run() != WL_CONNECTED) {
-    vTaskDelay(pdMS_TO_TICKS(500)); 
+// ─────────────────────────────────────────────────────────
+//  CONEXIÓN WiFi — Con timeout, no bloquea infinitamente
+// ─────────────────────────────────────────────────────────
+bool conectarWiFi() {
+  if (WiFi.status() == WL_CONNECTED) return true;
+
+  WiFi.disconnect(true);
+  vTaskDelay(pdMS_TO_TICKS(100));
+  WiFi.begin(SSID, PASS);
+
+  uint32_t inicio = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    if (millis() - inicio > TIMEOUT_WIFI) {
+      return false;
+    }
+    vTaskDelay(pdMS_TO_TICKS(500));
   }
-  // Suscribirse a los tópicos de control
-  mqtt.subscribe("test/datos/#", [](const char* topic, const char* payload) {
-    MensajeMQTT(String(topic), String(payload));
-  });
+  return true;
 }
 
-void pantallaOled() {
-  display.clearDisplay();         
-  display.setTextSize(1);         
-  display.setCursor(0,0);         
-  display.print("IP: ");  
-  display.print(WiFi.localIP()); 
+// ─────────────────────────────────────────────────────────
+//  TAREA 1: Broker MQTT (Núcleo 0 — PRIORIDAD MÁXIMA)
+//
+//  CRÍTICO: Esta es la tarea más importante.
+//  El ESP32 ES el broker. Si mqtt.loop() no se ejecuta
+//  frecuentemente, TODOS los clientes se desconectan.
+//  NO poner nada bloqueante aquí: ni OLED, ni sensores.
+// ─────────────────────────────────────────────────────────
+void BrokerTask(void *parameter) {
+  uint32_t ultimoEnvioPub = 0;
 
-  display.setCursor(0,8);       
-  display.print("T1: ");  display.print(temp1, 1);
-  display.setCursor(64,8);       
-  display.print("T2: "); display.print(temp2, 1);
-
-  display.setCursor(0,16);       
-  display.print("Q1: ");  display.print(dutyCycle1);
-  display.setCursor(64,16);       
-  display.print("Q2: ");  display.print(dutyCycle2);
-
-  display.setCursor(0,24);       
-  display.print("L1: ");  display.print(estadoled1);
-  display.setCursor(64,24);       
-  display.print("L2: ");  display.print(estadoled2);
-
-  display.setCursor(0,32);       
-  display.print("V1: ");  display.print(estadoventilador1);
-  display.setCursor(64,32);       
-  display.print("V2: ");  display.print(estadoventilador2);
-
-  display.setCursor(0,40);       
-  display.print("I1: ");  display.print(corrienteQ1, 2);
-  display.setCursor(64,40);       
-  display.print("I2: ");  display.print(corrienteQ2, 2);
-
-  display.setCursor(0,48);       
-  display.print("Tiempo: "); display.print(segundos, 0);
-  display.display();              
-}
-
-void setup() {
-  // Crear el Mutex para comunicación segura entre núcleos
-  xMutex = xSemaphoreCreateMutex();
-
-  // Configurar Wi-Fi
-  wifiMulti.addAP(ssid, pass);
-  wifiMulti.addAP(ssid2, pass2);
-  WiFi.mode(WIFI_STA);
-  
-  // Establecer conexión y preparar suscripciones MQTT
-  conectar();
-  mqtt.begin(); 
-
-  // Sensores DS18B20
-  sensors1.begin();
-  sensors1.setResolution(resolucionTemperatura);   
-  sensors1.setWaitForConversion(false); 
-  
-  sensors2.begin(); 
-  sensors2.setResolution(resolucionTemperatura);
-  sensors2.setWaitForConversion(false);
-
-  // Configurar Periféricos PWM (LEDC en ESP32)
-  ledcAttach(q1, frecuencia, resolucion);
-  ledcAttach(q2, frecuencia, resolucion);
-  ledcAttach(ventilador1, frecuencia, resolucion);
-  ledcAttach(ventilador2, frecuencia, resolucion);
-
-  // Pines Digitales Básicos
-  pinMode(led1, OUTPUT);
-  pinMode(led2, OUTPUT);
-
-  // Inicializar pantalla OLED
-  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    Serial.println("Error al inicializar la pantalla OLED");
-  }
-  display.clearDisplay();
-  display.setTextColor(SSD1306_WHITE);
-
-  // Primer disparo de conversión de temperatura
-  sensors1.requestTemperatures();
-  sensors2.requestTemperatures();
-
-  // Core 0: Gestión de Red, Tráfico MQTT y Conectividad
-  xTaskCreatePinnedToCore(
-    TareaConectividad,           
-    "Tarea_WiFi_MQTT",           
-    4096,                        
-    NULL,                        
-    1,                           
-    &TareaConectividadHandle,    
-    0                            // <--- CORE 0
-  );
-
-  // Core 1: Control de Hardware, ADC, PWM, Filtros y OLED
-  xTaskCreatePinnedToCore(
-    TareaControl,                
-    "Tarea_Hardware_Control",    
-    4096,                        
-    NULL,                        
-    2,                           // Mayor prioridad al lazo cerrado de control
-    &TareaControlHandle,         
-    1                            // <--- CORE 1
-  );
-}
-
-// El loop principal se elimina para ceder todo el control del chip a FreeRTOS
-void loop() {
-  vTaskDelete(NULL); 
-}
-
-// ==================== DEFINICIÓN DE TAREAS ====================
-
-void TareaConectividad(void * pvParameters) {
-  TickType_t xLastWakeTime = xTaskGetTickCount();
-  const TickType_t xPeriodoMqtt = pdMS_TO_TICKS(500); // Frecuencia de envío: 500ms
-
-  for(;;) {
-    // Procesa las solicitudes del Broker y mantiene vivas las conexiones
+  for (;;) {
+    // ── Loop del broker — DEBE correr lo más rápido posible ──
+    // Atiende conexiones de clientes, enruta mensajes, mantiene keepalive
     mqtt.loop();
 
-    // Envío periódico de datos medidos hacia la interfaz externa
-    if (xTaskGetTickCount() - xLastWakeTime >= xPeriodoMqtt) {
-      xLastWakeTime = xTaskGetTickCount();
+    // ── Publicación periódica de datos de sensores ──
+    if (millis() - ultimoEnvioPub >= INTERVALO_PUBLICACION) {
+      ultimoEnvioPub = millis();
 
-      if (xSemaphoreTake(xMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
-        mqtt.publish(data_temp1, String(temp1, 2));
-        mqtt.publish(data_temp2, String(temp2, 2));
-        mqtt.publish(data_IQ1, String(corrienteQ1, 3));
-        mqtt.publish(data_IQ2, String(corrienteQ2, 3));
-        mqtt.publish(data_time, String(segundos, 1));
-        xSemaphoreGive(xMutex);
+      // Timeout corto: si no logra tomar el mutex, salta esta publicación
+      // Es preferible perder 1 publicación que bloquear el broker
+      if (xSemaphoreTake(xMutexData, pdMS_TO_TICKS(20)) == pdTRUE) {
+        mqtt.publish(TOPIC_PUB_TEMP1, String(datos.temp1));
+        mqtt.publish(TOPIC_PUB_TEMP2, String(datos.temp2));
+        mqtt.publish(TOPIC_PUB_IQ1, String(datos.corrienteQ1));
+        mqtt.publish(TOPIC_PUB_IQ2, String(datos.corrienteQ2));
+        mqtt.publish(TOPIC_PUB_TIME, String(datos.segundos));
+        xSemaphoreGive(xMutexData);
       }
     }
-    vTaskDelay(pdMS_TO_TICKS(5)); // Pausa mínima para que el Stack de Wi-Fi interno respire
+
+    // Delay mínimo — el broker necesita ser responsivo
+    // 10ms = ~100 iteraciones/segundo del broker
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
 
-void TareaControl(void * pvParameters) {
-  unsigned long tiempoSensores = millis();
-  int localDuty1 = 0;
-  int localDuty2 = 0;
+// ─────────────────────────────────────────────────────────
+//  TAREA 2: Lectura de sensores (Núcleo 1)
+//  Lee temperaturas y corrientes sin interferir con el broker
+// ─────────────────────────────────────────────────────────
+void SensorTask(void *parameter) {
+  uint32_t ultimoMuestreoTemp = 0;
+  uint32_t ultimoMuestreoADC = 0;
+  bool conversionSolicitada = false;
 
-  for(;;) {
-    // 1. Muestreo de Corrientes por ADC (Frecuencia de ciclo rápido)
-    int Adc1 = analogRead(corriente1);
-    int Adc2 = analogRead(corriente2);
+  // Solicitar primera conversión de temperatura
+  sensorTemp1.requestTemperatures();
+  sensorTemp2.requestTemperatures();
+  conversionSolicitada = true;
 
-    if (xSemaphoreTake(xMutex, portMAX_DELAY) == pdTRUE) {
-      segundos = millis() / 1000.0;
-      
-      // Filtros de Media Exponencial (Matemática flotante precisa con 4095.0)
-      corrienteQ1 = (((Adc1 * 3.3) / 4095.0) + 0.1) * alpha + (1.0 - alpha) * corriente1Anterior;
-      corriente1Anterior = corrienteQ1;
+  for (;;) {
+    // ── Lectura de corrientes (ADC) — más frecuente ──
+    if (millis() - ultimoMuestreoADC >= INTERVALO_SENSORES_ADC) {
+      ultimoMuestreoADC = millis();
 
-      corrienteQ2 = (((Adc2 * 3.3) / 4095.0) + 0.1) * alpha + (1.0 - alpha) * corriente2Anterior; 
-      corriente2Anterior = corrienteQ2;
+      const int adc1 = analogRead(PIN_ADC_CORRIENTE1);
+      const int adc2 = analogRead(PIN_ADC_CORRIENTE2);
 
-      // Lectura segura de los comandos del Broker antes de liberar el Mutex
-      localDuty1 = dutyCycle1;
-      localDuty2 = dutyCycle2;
-      xSemaphoreGive(xMutex);
-    }
+      if (xSemaphoreTake(xMutexData, pdMS_TO_TICKS(20)) == pdTRUE) {
+        datos.segundos = millis() / 1000;
 
-    // Acción de Control sobre los Drivers/MOSFETs Q
-    ledcWrite(q1, (int)(localDuty1 * 2.55));
-    ledcWrite(q2, (int)(localDuty2 * 2.55));
+        datos.corrienteQ1 = (((adc1 * 3.3f) / 4096.0f) * ALPHA_CORRIENTE) +
+                            ((1.0f - ALPHA_CORRIENTE) * corriente1Anterior);
+        corriente1Anterior = datos.corrienteQ1;
 
-    // 2. Muestreo de Temperatura Asíncrono (Cada 800ms)
-    if (millis() - tiempoSensores >= 800) {
-      tiempoSensores = millis();
+        datos.corrienteQ2 = (((adc2 * 3.3f) / 4096.0f) * ALPHA_CORRIENTE) +
+                            ((1.0f - ALPHA_CORRIENTE) * corriente2Anterior);
+        corriente2Anterior = datos.corrienteQ2;
 
-      float t1_raw = sensors1.getTempCByIndex(0);
-      float t2_raw = sensors2.getTempCByIndex(0);
-
-      if (xSemaphoreTake(xMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
-        if (t1_raw != DEVICE_DISCONNECTED_C) {
-          temp1 = t1_raw * alpha + (1.0 - alpha) * temperatura1Anterior;
-          temperatura1Anterior = temp1;
-        }
-        if (t2_raw != DEVICE_DISCONNECTED_C) {
-          temp2 = t2_raw * alpha + (1.0 - alpha) * temperatura2Anterior;
-          temperatura2Anterior = temp2;
-        }
-        xSemaphoreGive(xMutex);
+        xSemaphoreGive(xMutexData);
       }
-      
-      // Solicitar inmediatamente la conversión en background para el próximo ciclo
-      sensors1.requestTemperatures();
-      sensors2.requestTemperatures();
     }
 
-    // 3. Actualización de la Pantalla OLED local
-    pantallaOled();
+    // ── Lectura de temperaturas — cada 800ms ──
+    if (millis() - ultimoMuestreoTemp >= INTERVALO_SENSORES_TEMP) {
+      ultimoMuestreoTemp = millis();
 
-    // Delay de 30ms para estabilizar el paso del lazo de hardware (~33 iteraciones por segundo)
-    vTaskDelay(pdMS_TO_TICKS(30)); 
+      if (conversionSolicitada) {
+        float t1_raw = sensorTemp1.getTempCByIndex(0);
+        float t2_raw = sensorTemp2.getTempCByIndex(0);
+
+        if (xSemaphoreTake(xMutexData, pdMS_TO_TICKS(20)) == pdTRUE) {
+          if (t1_raw != DEVICE_DISCONNECTED_C) {
+            datos.temp1 = t1_raw * ALPHA_TEMP + (1.0f - ALPHA_TEMP) * temp1Anterior;
+            temp1Anterior = datos.temp1;
+          }
+          if (t2_raw != DEVICE_DISCONNECTED_C) {
+            datos.temp2 = t2_raw * ALPHA_TEMP + (1.0f - ALPHA_TEMP) * temp2Anterior;
+            temp2Anterior = datos.temp2;
+          }
+          xSemaphoreGive(xMutexData);
+        }
+      }
+
+      // Solicitar nueva conversión para el próximo ciclo
+      sensorTemp1.requestTemperatures();
+      sensorTemp2.requestTemperatures();
+      conversionSolicitada = true;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(20));
   }
+}
+
+// ─────────────────────────────────────────────────────────
+//  TAREA 3: Pantalla OLED (Núcleo 1)
+//  Separada para que I2C no bloquee sensores ni broker
+// ─────────────────────────────────────────────────────────
+void DisplayTask(void *parameter) {
+  for (;;) {
+    if (xSemaphoreTake(xMutexData, pdMS_TO_TICKS(30)) == pdTRUE) {
+      // Copiar datos localmente para soltar el mutex rápido
+      float t1 = datos.temp1;
+      float t2 = datos.temp2;
+      float i1 = datos.corrienteQ1;
+      float i2 = datos.corrienteQ2;
+      uint8_t dq1 = datos.dutyCycleQ1;
+      uint8_t dq2 = datos.dutyCycleQ2;
+      String el1 = datos.estadoLed1;
+      String el2 = datos.estadoLed2;
+      String ev1 = datos.estadoVentilador1;
+      String ev2 = datos.estadoVentilador2;
+      uint32_t seg = datos.segundos;
+      xSemaphoreGive(xMutexData);
+
+      // Dibujar fuera del mutex (I2C es lento, ~80-120ms)
+      display.clearDisplay();
+      display.setTextSize(1);
+      display.setTextColor(SSD1306_WHITE);
+
+      // Fila 0: IP Local
+      display.setCursor(0, 0);
+      display.print("IP: ");
+      display.print(WiFi.localIP());
+
+      // Fila 1: Temperaturas
+      display.setCursor(0, 8);
+      display.print("T1: ");
+      display.print(t1, 1);
+      display.print("C");
+      display.setCursor(64, 8);
+      display.print("T2: ");
+      display.print(t2, 1);
+      display.print("C");
+
+      // Fila 2: Ciclos PWM
+      display.setCursor(0, 16);
+      display.print("Q1: ");
+      display.print(dq1);
+      display.print("%");
+      display.setCursor(64, 16);
+      display.print("Q2: ");
+      display.print(dq2);
+      display.print("%");
+
+      // Fila 3: Estado LEDs
+      display.setCursor(0, 24);
+      display.print("L1: ");
+      display.print(el1);
+      display.setCursor(64, 24);
+      display.print("L2: ");
+      display.print(el2);
+
+      // Fila 4: Estado Ventiladores
+      display.setCursor(0, 32);
+      display.print("V1: ");
+      display.print(ev1);
+      display.setCursor(64, 32);
+      display.print("V2: ");
+      display.print(ev2);
+
+      // Fila 5: Corrientes
+      display.setCursor(0, 40);
+      display.print("I1: ");
+      display.print(i1, 2);
+      display.print("A");
+      display.setCursor(64, 40);
+      display.print("I2: ");
+      display.print(i2, 2);
+      display.print("A");
+
+      // Fila 6: Tiempo
+      display.setCursor(0, 48);
+      display.print("Tiempo: ");
+      display.print(seg);
+      display.print(" Seg");
+
+      // Fila 7: Estado del broker
+      display.setCursor(0, 56);
+      display.print("Broker: OK");
+
+      display.display();
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(INTERVALO_OLED));
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+//  SETUP
+// ─────────────────────────────────────────────────────────
+void setup() {
+  // Mutex — crear ANTES de cualquier tarea
+  xMutexData = xSemaphoreCreateMutex();
+
+  // Pines digitales
+  pinMode(PIN_LED1, OUTPUT);
+  pinMode(PIN_LED2, OUTPUT);
+
+  // Sensores de temperatura
+  sensorTemp1.begin();
+  sensorTemp1.setResolution(RESOLUCION_TEMP);
+  sensorTemp2.begin();
+  sensorTemp2.setResolution(RESOLUCION_TEMP);
+  analogReadResolution(12);
+
+  // PWM
+  ledcAttach(PIN_PWM_Q1, FREC_PWM_Q1, RESOLUCION_PWM);
+  ledcAttach(PIN_PWM_Q2, FREC_PWM_Q2, RESOLUCION_PWM);
+  ledcAttach(PIN_VENTILADOR1, FREC_PWM_VENT1, RESOLUCION_PWM);
+  ledcAttach(PIN_VENTILADOR2, FREC_PWM_VENT2, RESOLUCION_PWM);
+
+  // Pantalla OLED
+  if (display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    display.clearDisplay();
+    display.setTextColor(SSD1306_WHITE);
+    display.display();
+  }
+
+  // ── Configuración WiFi robusta ──
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);          // Desactivar power-save (evita desconexiones)
+  WiFi.setAutoReconnect(true);   // Reconexión automática a nivel de stack
+  WiFi.persistent(false);        // No guardar en flash cada boot
+
+  // Conectar WiFi (bloqueante solo en setup, con timeout)
+  conectarWiFi();
+
+  // ── Iniciar Broker MQTT ──
+  // Suscribirse a tópicos de control
+  mqtt.subscribe("test/datos/#", [](const char *topic, const char *payload) {
+    procesarMensajeMQTT(topic, payload);
+  });
+  mqtt.begin();
+
+  // ── Crear tareas ──
+
+  // Núcleo 0: Broker MQTT (PRIORIDAD 2 — la más alta)
+  // El broker es la tarea más crítica: si no corre, los clientes se desconectan
+  xTaskCreatePinnedToCore(BrokerTask, "BrokerTask",
+                          8192,  // Stack 8 KB (broker necesita más para manejar clientes)
+                          NULL, 2, &BrokerTaskHandle,
+                          0);    // Núcleo 0
+
+  // Núcleo 1: Sensores (PRIORIDAD 2 — lectura crítica)
+  xTaskCreatePinnedToCore(SensorTask, "SensorTask",
+                          4096,  // Stack 4 KB
+                          NULL, 2, &SensorTaskHandle,
+                          1);    // Núcleo 1
+
+  // Núcleo 1: Display OLED (PRIORIDAD 1 — no crítica)
+  xTaskCreatePinnedToCore(DisplayTask, "DisplayTask",
+                          4096,  // Stack 4 KB
+                          NULL, 1, &DisplayTaskHandle,
+                          1);    // Núcleo 1
+}
+
+void loop() {
+  vTaskDelete(NULL);
 }
