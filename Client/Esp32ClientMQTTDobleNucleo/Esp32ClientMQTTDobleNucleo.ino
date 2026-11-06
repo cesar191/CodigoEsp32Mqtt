@@ -31,9 +31,9 @@ constexpr uint32_t FREC_PWM_Q2 = 10000;
 constexpr uint32_t FREC_PWM_VENT1 = 5000;
 constexpr uint32_t FREC_PWM_VENT2 = 5000;
 constexpr uint8_t RESOLUCION_PWM = 8;
-constexpr uint8_t RESOLUCION_TEMP = 9;
+constexpr uint8_t RESOLUCION_TEMP = 12;
 constexpr float ALPHA_TEMP = 0.8f;
-constexpr float ALPHA_CORRIENTE = 0.1f;
+constexpr float ALPHA_CORRIENTE = 0.05f;
 
 // Intervalos de tiempo (ms)
 constexpr uint32_t INTERVALO_PUBLICACION = 500;
