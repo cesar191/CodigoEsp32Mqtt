@@ -18,7 +18,6 @@ CodigoEsp32Mqtt/
 │   ├── ArduinoSerialPlanta/        # Arduino UNO — planta física vía puerto serie
 │   ├── SerilaComunicacionControl/  # ESP32 — control por serie (un núcleo)
 │   └── SerialComunicacionControlDobleNucleo/ # ESP32 — control por serie (doble núcleo)
-├── pruebaMQTT/                     # Prueba con PubSubClient + SD + WiFiMulti
 └── libraries/                      # Librerías incluidas en el repositorio
 ```
 
@@ -185,29 +184,6 @@ Versión FreeRTOS del control serial con tres tareas:
 | `SerialTask`   | 0      | 2 (alta)  | Recibe comandos y envía telemetría cada 1 segundo   |
 | `SensorTask`   | 1      | 2 (alta)  | Lee temperatura (800 ms) y ADC (50 ms)              |
 | `DisplayTask`  | 1      | 1 (baja)  | Actualiza OLED cada 300 ms                          |
-
----
-
-### `pruebaMQTT` — Prueba con PubSubClient + SD + WiFiMulti
-
-Sketch de prueba más completo que incluye:
-- **`WiFiMulti`**: gestiona múltiples redes WiFi (cambia automáticamente a la disponible).
-- **Lector de SD**: lee credenciales WiFi/MQTT desde archivos `.txt` en una tarjeta SD (pines SPI, CS en GPIO 15).
-- **Conexión TLS opcional**: si el puerto no es 1883, carga certificados (`RootCA.pem`, `Cert.crt`, `Private.key`) desde la SD.
-- **Librería MQTT:** `PubSubClient`
-
-**Archivos esperados en la SD:**
-```
-/ssid.txt
-/password.txt
-/broker.txt
-/port.txt
-/mqtt_user.txt
-/mqtt_pass.txt
-/RootCA.pem      (solo si TLS)
-/Cert.crt        (solo si TLS)
-/Private.key     (solo si TLS)
-```
 
 ---
 
