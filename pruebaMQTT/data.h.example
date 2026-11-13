@@ -1,0 +1,46 @@
+#ifndef DATA_H
+#define DATA_H
+
+// ============================================================================
+// CONFIGURACIÓN DE RED Y MQTT (PLANTILLA DE EJEMPLO)
+// ============================================================================
+// INSTRUCCIONES DE USO:
+// 1. Haz una copia de este archivo en esta misma carpeta y nómbralo: data.h
+// 2. Modifica a continuación tus credenciales reales de Wi-Fi y Broker.
+// 3. 'data.h' está en .gitignore para proteger tus contraseñas personales.
+// ============================================================================
+
+// --- 1. Credenciales de Red Wi-Fi ---
+constexpr char SSID[] = "TU_RED_WIFI";
+constexpr char PASS[] = "TU_PASSWORD_WIFI";
+
+// Redes auxiliares para WiFiMulti
+#define SSID_HOGAR  "TU_RED_WIFI_HOGAR"
+#define PASS_HOGAR  "TU_PASSWORD_HOGAR"
+#define SSID_MOVIL  "TU_RED_WIFI_MOVIL"
+#define PASS_MOVIL  "TU_PASSWORD_MOVIL"
+
+// --- 2. Servidor / Broker MQTT ---
+constexpr char BROKER_MQTT[]     = "192.168.1.100";  // IP del broker
+constexpr uint16_t PUERTO_MQTT   = 1883;             // 1883 plano o 8883 para TLS con SD
+constexpr char USER_MQTT[]       = "";               // Usuario MQTT (si aplica)
+constexpr char PASS_MQTT[]       = "";               // Contraseña MQTT (si aplica)
+constexpr char ESP_CLIENT_NAME[] = "esp32_control_node"; // ID único cliente
+
+// --- 3. Tópicos MQTT de Publicación (ESP32 -> Broker) ---
+constexpr char TOPIC_PUB_TEMP1[] = "test/sensor/temperatura1";
+constexpr char TOPIC_PUB_TEMP2[] = "test/sensor/temperatura2";
+constexpr char TOPIC_PUB_IQ1[]   = "test/sensor/corrienteQ1";
+constexpr char TOPIC_PUB_IQ2[]   = "test/sensor/corrienteQ2";
+constexpr char TOPIC_PUB_TIME[]  = "test/sensor/tiempo";
+
+// --- 4. Tópicos MQTT de Suscripción (Broker -> ESP32) ---
+constexpr char TOPIC_SUB_PWM1[]  = "test/datos/pwm1";
+constexpr char TOPIC_SUB_PWM2[]  = "test/datos/pwm2";
+constexpr char TOPIC_SUB_LED1[]  = "test/datos/led1";
+constexpr char TOPIC_SUB_LED2[]  = "test/datos/led2";
+constexpr char TOPIC_SUB_VENT1[] = "test/datos/ventilador1";
+constexpr char TOPIC_SUB_VENT2[] = "test/datos/ventilador2";
+
+#endif // DATA_H
+

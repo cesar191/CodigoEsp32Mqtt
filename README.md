@@ -1,249 +1,224 @@
-# ESP32 — Control y Monitoreo con MQTT
+# 🌡️ Sistema de Monitoreo Térmico y Control con ESP32 y MQTT
 
-Firmware para **ESP32** que implementa adquisición de datos (temperatura con DS18B20 y corriente vía ADC) y control de actuadores (PWM, LEDs, ventiladores) a través del protocolo **MQTT**. El proyecto incluye variantes de un solo núcleo, doble núcleo (FreeRTOS), broker embebido y comunicación serial.
+[![Platform: ESP32](https://img.shields.io/badge/Platform-ESP32-blue.svg)](https://www.espressif.com/en/products/socs/esp32)
+[![Protocol: MQTT](https://img.shields.io/badge/Protocol-MQTT-orange.svg)](https://mqtt.org/)
+[![RTOS: FreeRTOS](https://img.shields.io/badge/OS-FreeRTOS%20Dual--Core-green.svg)](https://www.freertos.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+Firmware modular para **ESP32** diseñado para la adquisición en tiempo real de temperatura (sensores digitales DS18B20), sensado de corriente (ADC) y control de potencia (modulación PWM en transistores, ventiladores y LEDs) a través del protocolo **MQTT** y comunicación **Serial**.
+
+Incluye arquitecturas de **un solo núcleo** y **doble núcleo (FreeRTOS)**, con capacidades tanto para operar como **Cliente MQTT** como para alojar un **Broker MQTT local embebido** (`PicoMQTT`).
 
 ---
 
-## Estructura del repositorio
+## 🗺️ Arquitectura del Sistema
+
+```mermaid
+flowchart TD
+    subgraph ESP32["ESP32 (Nodo de Monitoreo y Control)"]
+        subgraph Core0["Núcleo 0 (Core 0)"]
+            T_MQTT["Tarea de Red / Broker MQTT\n(PicoMQTT / MQTTClient)\nPrioridad Alta"]
+        end
+        subgraph Core1["Núcleo 1 (Core 1)"]
+            T_SENS["Tarea de Sensores\n(DS18B20 + ADC Corriente)\nFiltro IIR"]
+            T_DISP["Tarea de Pantalla\n(OLED SSD1306 128x64)\nI2C"]
+        end
+        MUTEX[("Mutex de Datos Compartidos")]
+        T_MQTT <--> MUTEX
+        T_SENS <--> MUTEX
+        T_DISP <--> MUTEX
+    end
+
+    SENSORES["Sensores:\n- 2x Temp DS18B20\n- 2x Canales ADC"] -->|GPIO 14, 27, 34, 35| T_SENS
+    T_MQTT -->|GPIO 12, 13, 25, 26, 32, 33| ACTUADORES["Actuadores:\n- Transistores PWM (Q1, Q2)\n- 2x Ventiladores\n- 2x LEDs"]
+    T_DISP -->|I2C 0x3C| OLED["Pantalla OLED 128x64"]
+
+    T_MQTT <-->|Wi-Fi / MQTT 1883| BROKER["Broker Externo o HMI\n(Dashboard, C#, Node-RED,\nMQTT Explorer)"]
+```
+
+---
+
+## ⚡ Guía Rápida de Replicación (en 3 pasos)
+
+Para clonar y poner a funcionar el proyecto en tu propio ESP32:
+
+### Paso 1: Clonar o descargar el repositorio
+```bash
+git clone https://github.com/tu-usuario/CodigoEsp32Mqtt.git
+cd CodigoEsp32Mqtt
+```
+
+### Paso 2: Crear tu archivo de configuración `data.h`
+El archivo `data.h` contiene contraseñas privadas, por lo que **no se sube al repositorio** (está protegido por `.gitignore`). En su lugar, encontrarás plantillas listas llamadas `data.h.example`.
+
+Copia el archivo de ejemplo para crear tu propio `data.h`:
+
+* **En Linux / macOS / Git Bash:**
+  ```bash
+  # En la carpeta del sketch que vayas a usar, por ejemplo:
+  cp Broker/ESP32BrokerDobleNucleo/data.h.example Broker/ESP32BrokerDobleNucleo/data.h
+  # o si usas el cliente:
+  cp Client/Esp32ClientMQTTDobleNucleo/data.h.example Client/Esp32ClientMQTTDobleNucleo/data.h
+  ```
+* **En Windows (CMD o PowerShell):**
+  ```powershell
+  # Ejemplo para el Broker Doble Núcleo:
+  Copy-Item Broker\ESP32BrokerDobleNucleo\data.h.example Broker\ESP32BrokerDobleNucleo\data.h
+  # Ejemplo para el Cliente Doble Núcleo:
+  Copy-Item Client\Esp32ClientMQTTDobleNucleo\data.h.example Client\Esp32ClientMQTTDobleNucleo\data.h
+  ```
+* **O desde el Explorador de Archivos:**  
+  Simplemente copia el archivo `data.h.example` que está junto al sketch `.ino`, pégalo en esa misma carpeta y renómbralo como `data.h`.
+
+### Paso 3: Configurar tus credenciales
+Abre el nuevo `data.h` y coloca tus datos de Wi-Fi y Broker:
+
+```cpp
+// --- Credenciales de tu Red Wi-Fi ---
+constexpr char SSID[] = "Mi_Red_WiFi";
+constexpr char PASS[] = "Mi_Password_Secreto";
+
+// --- Configuración de tu Broker MQTT ---
+constexpr char BROKER_MQTT[]     = "192.168.1.50"; // IP de tu broker (si usas Cliente)
+constexpr uint16_t PUERTO_MQTT   = 1883;
+constexpr char USER_MQTT[]       = "";             // Opcional
+constexpr char PASS_MQTT[]       = "";             // Opcional
+constexpr char ESP_CLIENT_NAME[] = "esp32_planta";
+```
+
+¡Listo! Ya puedes abrir el sketch en Arduino IDE y cargarlo a tu placa.
+
+---
+
+## 📁 Estructura del Repositorio
+
+El repositorio está clasificado según el modo de operación:
 
 ```
 CodigoEsp32Mqtt/
+├── data.h.example                      # 📄 Plantilla maestra de configuración
 ├── Broker/
-│   ├── ESP32BrokerUnNucleo/        # ESP32 como broker MQTT (un solo núcleo)
-│   └── ESP32BrokerDobleNucleo/     # ESP32 como broker MQTT (doble núcleo, FreeRTOS)
+│   ├── ESP32BrokerDobleNucleo/         # 🌟 [RECOMENDADO] Broker local embebido en FreeRTOS
+│   └── ESP32BrokerUnNucleo/            # Broker local básico en un solo hilo
 ├── Client/
-│   ├── Esp32ClienteTest/           # ESP32 como cliente MQTT (un solo núcleo)
-│   └── Esp32ClientMQTTDobleNucleo/ # ESP32 como cliente MQTT (doble núcleo, FreeRTOS)
+│   ├── Esp32ClientMQTTDobleNucleo/     # 🌟 [RECOMENDADO] Cliente conectándose a Broker externo
+│   └── Esp32ClienteTest/               # Cliente MQTT básico de prueba
 ├── Serial/
-│   ├── ArduinoSerialPlanta/        # Arduino UNO — planta física vía puerto serie
-│   ├── SerilaComunicacionControl/  # ESP32 — control por serie (un núcleo)
-│   └── SerialComunicacionControlDobleNucleo/ # ESP32 — control por serie (doble núcleo)
-└── libraries/                      # Librerías incluidas en el repositorio
+│   ├── SerialComunicacionControlDobleNucleo/ # Control serie optimizado en FreeRTOS
+│   ├── SerilaComunicacionControl/            # Control serie básico en ESP32
+│   └── ArduinoSerialPlanta/                  # Emulador de planta para Arduino UNO
+├── pruebaMQTT/                         # Pruebas con PubSubClient + Tarjeta SD + TLS
+└── libraries/                          # Librerías listas para instalar
 ```
 
 ---
 
-## Mapa de pines (ESP32)
+## 🎯 ¿Qué sketch debo elegir?
 
-Todos los sketches del ESP32 usan el mismo mapa de pines:
-
-| Función              | Pin GPIO |
-|----------------------|----------|
-| Sensor temp 1 (DS18B20) | 14    |
-| Sensor temp 2 (DS18B20) | 27    |
-| ADC corriente Q1     | 35       |
-| ADC corriente Q2     | 34       |
-| LED 1                | 26       |
-| LED 2                | 25       |
-| Ventilador 1 (PWM)   | 33       |
-| Ventilador 2 (PWM)   | 32       |
-| PWM transistor Q1    | 13       |
-| PWM transistor Q2    | 12       |
-| Pantalla OLED (I2C)  | SDA/SCL estándar (I2C, dirección `0x3C`) |
-
-> [!NOTE]
-> Los sketches del Arduino UNO (`ArduinoSerialPlanta`) usan pines analógicos A1–A4 para temperatura/corriente y pines digitales 5–11 para PWM/LEDs/ventiladores.
+| Caso de uso | Sketch recomendado | ¿Por qué? |
+|---|---|---|
+| **No tengo un servidor/PC para Mosquitto** | [`Broker/ESP32BrokerDobleNucleo`](file:///d:/RepoGit/CodigoEsp32Mqtt/Broker/ESP32BrokerDobleNucleo/ESP32BrokerDobleNucleo.ino) | El propio ESP32 crea el Broker MQTT. Cualquier PC o app se conecta directamente a la IP del ESP32. |
+| **Ya tengo Mosquitto / Raspberry Pi / Cloud** | [`Client/Esp32ClientMQTTDobleNucleo`](file:///d:/RepoGit/CodigoEsp32Mqtt/Client/Esp32ClientMQTTDobleNucleo/Esp32ClientMQTTDobleNucleo.ino) | Conecta el ESP32 a la red corporativa o local como cliente estándar. Muy ligero y estable. |
+| **Control cableado USB sin Wi-Fi** | [`Serial/SerialComunicacionControlDobleNucleo`](file:///d:/RepoGit/CodigoEsp32Mqtt/Serial/SerialComunicacionControlDobleNucleo/SerilaComunicacionControlDobleNucleo.ino) | Comunicación por comandos ASCII mediante cable USB a 115200 baudios. |
+| **Tengo credenciales en tarjeta MicroSD** | [`pruebaMQTT`](file:///d:/RepoGit/CodigoEsp32Mqtt/pruebaMQTT/pruebaMQTT.ino) | Lee configuración de red y certificados TLS desde archivos de texto en la SD. |
 
 ---
 
-## Configuración inicial — archivo `data.h`
+## 🔌 Conexiones de Hardware (Pinout)
+
+### Pines del ESP32
+
+| Módulo / Periférico | Pin GPIO | Modo | Notas |
+|---|---|---|---|
+| **Sensor Temperatura 1** | `GPIO 14` | Digital (1-Wire) | DS18B20 (Requiere resistencia pull-up de 4.7 kΩ a 3.3V) |
+| **Sensor Temperatura 2** | `GPIO 27` | Digital (1-Wire) | DS18B20 (Requiere resistencia pull-up de 4.7 kΩ a 3.3V) |
+| **Sensor Corriente Q1** | `GPIO 35` | ADC (Analógico) | Entrada solo lectura (0 a 3.3V, resolución 12 bits) |
+| **Sensor Corriente Q2** | `GPIO 34` | ADC (Analógico) | Entrada solo lectura (0 a 3.3V, resolución 12 bits) |
+| **Transistor Potencia Q1** | `GPIO 13` | Salida PWM | Frecuencia: 500 Hz, Resolución: 8 bits (0-255) |
+| **Transistor Potencia Q2** | `GPIO 12` | Salida PWM | Frecuencia: 10 kHz, Resolución: 8 bits (0-255) |
+| **Ventilador 1** | `GPIO 33` | Salida PWM | Frecuencia: 5 Hz (control de pulso suave) |
+| **Ventilador 2** | `GPIO 32` | Salida PWM | Frecuencia: 5 Hz (control de pulso suave) |
+| **LED Indicador 1** | `GPIO 26` | Salida Digital | Indicador visual de estado |
+| **LED Indicador 2** | `GPIO 25` | Salida Digital | Indicador visual de estado |
+| **Pantalla OLED SSD1306** | `GPIO 21 (SDA)`<br>`GPIO 22 (SCL)` | Bus I2C | Dirección I2C: `0x3C`, resolución 128x64 px |
 
 > [!IMPORTANT]
-> El archivo `data.h` **no se sube al repositorio** (está en `.gitignore`). Debes crearlo manualmente en la carpeta de cada sketch antes de compilar.
-
-Copia la siguiente plantilla y completa con tus datos:
-
-```cpp
-#ifndef DATA_H
-#define DATA_H
-
-// Credenciales Wi-Fi
-constexpr char SSID[] = "TU_RED_WIFI";
-constexpr char PASS[] = "TU_CONTRASEÑA";
-
-// Broker MQTT
-constexpr char BROKER_MQTT[]     = "192.168.X.X";  // IP de tu broker
-constexpr uint16_t PUERTO_MQTT   = 1883;
-constexpr char USER_MQTT[]       = "";              // Dejar vacío si no hay auth
-constexpr char PASS_MQTT[]       = "";
-constexpr char ESP_CLIENT_NAME[] = "esp32client";
-
-// Tópicos de publicación (ESP32 → broker)
-constexpr char TOPIC_PUB_TEMP1[] = "test/sensor/temperatura1";
-constexpr char TOPIC_PUB_TEMP2[] = "test/sensor/temperatura2";
-constexpr char TOPIC_PUB_IQ1[]   = "test/sensor/corrienteQ1";
-constexpr char TOPIC_PUB_IQ2[]   = "test/sensor/corrienteQ2";
-constexpr char TOPIC_PUB_TIME[]  = "test/sensor/tiempo";
-
-// Tópicos de suscripción (broker → ESP32)
-constexpr char TOPIC_SUB_PWM1[]  = "test/datos/pwm1";
-constexpr char TOPIC_SUB_PWM2[]  = "test/datos/pwm2";
-constexpr char TOPIC_SUB_LED1[]  = "test/datos/led1";
-constexpr char TOPIC_SUB_LED2[]  = "test/datos/led2";
-constexpr char TOPIC_SUB_VENT1[] = "test/datos/ventilador1";
-constexpr char TOPIC_SUB_VENT2[] = "test/datos/ventilador2";
-
-#endif
-```
+> **Resistencias de Pull-Up:** Los sensores de temperatura DS18B20 utilizan el protocolo Dallas 1-Wire. Es indispensable conectar una resistencia pull-up de **4.7 kΩ** entre el pin de señal de datos y el riel de **3.3V**.
 
 ---
 
-## Descripción de cada sketch
+## 📡 Protocolo MQTT — Tópicos y Comandos
 
-### `Broker/ESP32BrokerUnNucleo` — Broker en un solo núcleo
+### 📤 Tópicos de Telemetría (El ESP32 publica)
+Frecuencia de envío: cada 500 ms a 1000 ms.
 
-El ESP32 aloja su propio broker MQTT usando **PicoMQTT**. Todo corre en el `loop()` principal: lectura de sensores, pantalla OLED, publicación y atención de clientes.
+| Tópico | Tipo de Dato | Ejemplo | Descripción |
+|---|---|---|---|
+| `test/sensor/temperatura1` | `float` | `24.5` | Temperatura medida en sensor 1 (°C) |
+| `test/sensor/temperatura2` | `float` | `31.2` | Temperatura medida en sensor 2 (°C) |
+| `test/sensor/corrienteQ1` | `float` | `0.45` | Corriente calculada y filtrada en Q1 (A) |
+| `test/sensor/corrienteQ2` | `float` | `0.82` | Corriente calculada y filtrada en Q2 (A) |
+| `test/sensor/tiempo` | `uint32` | `120` | Tiempo de funcionamiento en segundos |
 
-- **Librería MQTT:** `PicoMQTT::Server`
-- **Cuándo usarlo:** Pruebas rápidas o cuando solo hay un cliente conectado.
+### 📥 Tópicos de Control (El ESP32 se suscribe)
 
-> [!WARNING]
-> Al correr en un solo núcleo, el `loop()` hace todo: sensores, OLED y broker. Si los sensores DS18B20 tardan demasiado en convertir, el broker puede dejar de responder brevemente a los clientes.
-
----
-
-### `Broker/ESP32BrokerDobleNucleo` — Broker en doble núcleo (FreeRTOS) ✅ Recomendado
-
-Versión optimizada con tres tareas independientes usando `xTaskCreatePinnedToCore`:
-
-| Tarea         | Núcleo | Prioridad | Función                                     |
-|---------------|--------|-----------|---------------------------------------------|
-| `BrokerTask`  | 0      | 2 (alta)  | Mantiene el broker y publica cada 1 segundo |
-| `SensorTask`  | 1      | 2 (alta)  | Lee temperatura (cada 800 ms) y ADC (cada 50 ms) |
-| `DisplayTask` | 1      | 1 (baja)  | Actualiza la pantalla OLED cada 300 ms      |
-
-Los datos se comparten entre tareas a través de un `SemaphoreHandle_t` (mutex).
-
-El broker también incluye **autenticación** de usuario y contraseña mediante una clase `SecureBroker` que hereda de `PicoMQTT::Server`.
-
-> [!IMPORTANT]
-> **No reinicies el ESP32 mientras la interfaz de control (HMI) esté conectada.** Al resetear, el broker desaparece de la red y los clientes reciben excepciones de desconexión abrupta hasta que el ESP32 vuelve a arrancar.
+| Tópico | Rango / Valores | Acción en Hardware |
+|---|---|---|
+| `test/datos/pwm1` | `0` a `100` (%) | Ajusta ciclo útil del Transistor Q1 (`GPIO 13`) |
+| `test/datos/pwm2` | `0` a `100` (%) | Ajusta ciclo útil del Transistor Q2 (`GPIO 12`) |
+| `test/datos/led1` | `"on"` / `"off"` | Enciende o apaga el LED 1 (`GPIO 26`) |
+| `test/datos/led2` | `"on"` / `"off"` | Enciende o apaga el LED 2 (`GPIO 25`) |
+| `test/datos/ventilador1`| `"on"` / `"off"` o `0-100` | Control de velocidad Ventilador 1 (`GPIO 33`) |
+| `test/datos/ventilador2`| `"on"` / `"off"` o `0-100` | Control de velocidad Ventilador 2 (`GPIO 32`) |
 
 ---
 
-### `Client/Esp32ClienteTest` — Cliente MQTT en un solo núcleo
+## 📈 Filtro Digital IIR Implementado
 
-El ESP32 se conecta a un broker **externo** (ej. Mosquitto en PC o Raspberry Pi). Todo corre en `loop()`.
+Para suprimir el ruido eléctrico del ADC y las fluctuaciones térmicas, las lecturas se procesan mediante un filtro pasa-bajas exponencial de primer orden en tiempo discreto:
 
-- **Librería MQTT:** `MQTT` (`MQTTClient`)
-- **Cuándo usarlo:** Cuando el broker corre en otra máquina de la red.
+$$y[k] = \alpha \cdot x[k] + (1 - \alpha) \cdot y[k-1]$$
 
----
-
-### `Client/Esp32ClientMQTTDobleNucleo` — Cliente MQTT en doble núcleo (FreeRTOS) ✅ Recomendado
-
-Versión optimizada del cliente con tres tareas:
-
-| Tarea         | Núcleo | Prioridad | Función                                          |
-|---------------|--------|-----------|--------------------------------------------------|
-| `SensorTask`  | 1      | 2 (alta)  | Lee temperatura y corriente                      |
-| `MQTTTask`    | 0      | 1         | Mantiene WiFi + MQTT, publica cada 500 ms        |
-| `DisplayTask` | 1      | 1 (baja)  | Actualiza OLED cada 250 ms                       |
-
-Incluye **reconexión automática** a WiFi y MQTT con reintentos y timeout, y muestra en la OLED si hay desconexión (`WiFi: Desconectado` o `MQTT: ---`).
+* **Temperatura ($\alpha = 0.8$):** Pondera fuertemente el nuevo valor asegurando respuesta rápida a los cambios térmicos reales.
+* **Corriente ADC ($\alpha = 0.05$ - $0.1$):** Filtra fuertemente el ruido de alta frecuencia proveniente de la conmutación PWM y fuentes de alimentación.
 
 ---
 
-### `Serial/ArduinoSerialPlanta` — Arduino UNO como planta física
+## 📦 Librerías Necesarias
 
-Sketch para un **Arduino UNO** (no ESP32). Simula la planta física: lee sensores LM35 (temperatura analógica) y envía telemetría por puerto serie.
+Las librerías están incluidas en la carpeta [`libraries/`](file:///d:/RepoGit/CodigoEsp32Mqtt/libraries/) de este repositorio, o pueden descargarse desde el gestor de librerías del Arduino IDE:
 
-**Protocolo de telemetría (Arduino → PC):**
-```
-#Temp1<valor>\n
-#Temp2<valor>\n
-#Corri1<valor>\n
-#Corri2<valor>\n
-#Tiempo<segundos>\n
-```
-
-**Protocolo de comandos (PC → Arduino):**
-```
-$LED1on / $LED1off
-$LED2on / $LED2off
-$VENT1on / $VENT1off
-$VENT2on / $VENT2off
-$PWM150        → PWM Q1 al 50%
-$PWM275        → PWM Q2 al 75%
-```
+* **PicoMQTT** (de *Mculib*): Broker y cliente MQTT ultraligero para microcontroladores.
+* **MQTT** (de *Joel Gaehwiler*): Cliente MQTT estándar utilizado en la versión Cliente.
+* **PubSubClient** (de *Nick O'Leary*): Utilizado en el sketch de prueba con SD.
+* **DallasTemperature** & **OneWire**: Control y lectura digital de los sensores DS18B20.
+* **Adafruit SSD1306** & **Adafruit GFX Library**: Renderizado de gráficos y texto en el display OLED.
 
 ---
 
-### `Serial/SerilaComunicacionControl` — ESP32 control por serie (un núcleo)
+## 🛠️ Preguntas Frecuentes y Solución de Problemas
 
-Versión para ESP32 del control por puerto serie. Mismo protocolo que el Arduino UNO, pero con sensores DS18B20 (digital) y PWM via `ledcWrite`. Corre en un `loop()` simple.
+### 1. Error de compilación: `data.h: No such file or directory`
+> **Causa:** No creaste el archivo `data.h`.  
+> **Solución:** Copia el archivo `data.h.example` ubicado en la carpeta del sketch y renómbralo exactamente como `data.h`.
 
----
+### 2. El sensor de temperatura reporta `-127.0 °C`
+> **Causa:** El ESP32 no detecta el sensor DS18B20 en el bus 1-Wire.  
+> **Solución:** Revisa la conexión de alimentación del sensor (GND y VCC a 3.3V) y verifica que la **resistencia pull-up de 4.7 kΩ** esté correctamente instalada entre el pin de datos y 3.3V.
 
-### `Serial/SerialComunicacionControlDobleNucleo` — ESP32 control por serie (doble núcleo)
-
-Versión FreeRTOS del control serial con tres tareas:
-
-| Tarea          | Núcleo | Prioridad | Función                                             |
-|----------------|--------|-----------|-----------------------------------------------------|
-| `SerialTask`   | 0      | 2 (alta)  | Recibe comandos y envía telemetría cada 1 segundo   |
-| `SensorTask`   | 1      | 2 (alta)  | Lee temperatura (800 ms) y ADC (50 ms)              |
-| `DisplayTask`  | 1      | 1 (baja)  | Actualiza OLED cada 300 ms                          |
-
----
-
-## Librerías requeridas
-
-Instálalas desde el Administrador de Librerías de Arduino IDE o copia las carpetas de `libraries/` en tu directorio de librerías local.
-
-| Librería             | Uso                                           |
-|----------------------|-----------------------------------------------|
-| `PicoMQTT`           | Broker MQTT embebido en el ESP32              |
-| `MQTT`               | Cliente MQTT liviano (`MQTTClient`)           |
-| `PubSubClient`       | Cliente MQTT alternativo (`pruebaMQTT`)       |
-| `DallasTemperature`  | Lectura de sensores DS18B20                   |
-| `OneWire`            | Bus 1-Wire para DS18B20                       |
-| `Adafruit_SSD1306`   | Control de pantalla OLED 128×64               |
-| `Adafruit_GFX`       | Primitivas gráficas para la OLED              |
-
----
-
-## Filtro IIR (suavizado de señales)
-
-Todos los sketches aplican un filtro exponencial de primer orden a temperatura y corriente para reducir ruido:
-
-$$y[n] = \alpha \cdot x[n] + (1-\alpha) \cdot y[n-1]$$
-
-| Señal      | Alpha (`α`) | Efecto                        |
-|------------|-------------|-------------------------------|
-| Temperatura | `0.8`      | Respuesta rápida, poco filtro |
-| Corriente   | `0.1`      | Respuesta lenta, mucho filtro |
-
-Un α cercano a 1 sigue más la señal real; un α cercano a 0 suaviza más pero reacciona más lento.
-
----
-
-## Protocolo MQTT — Referencia rápida
-
-### Publicación (ESP32 → broker, cada 500–1000 ms)
-
-| Tópico                        | Tipo    | Descripción            |
-|-------------------------------|---------|------------------------|
-| `test/sensor/temperatura1`    | `float` | Temperatura sensor 1 (°C) |
-| `test/sensor/temperatura2`    | `float` | Temperatura sensor 2 (°C) |
-| `test/sensor/corrienteQ1`     | `float` | Corriente Q1 (V ADC filtrado) |
-| `test/sensor/corrienteQ2`     | `float` | Corriente Q2 (V ADC filtrado) |
-| `test/sensor/tiempo`          | `uint32`| Segundos desde arranque |
-
-### Suscripción (broker → ESP32)
-
-| Tópico                  | Valores aceptados          | Acción                             |
-|-------------------------|----------------------------|------------------------------------|
-| `test/datos/pwm1`       | `0` – `100`                | PWM del transistor Q1 en %         |
-| `test/datos/pwm2`       | `0` – `100`                | PWM del transistor Q2 en %         |
-| `test/datos/led1`       | `"on"` / `"off"`           | Enciende o apaga LED 1             |
-| `test/datos/led2`       | `"on"` / `"off"`           | Enciende o apaga LED 2             |
-| `test/datos/ventilador1`| `"on"` / `"off"` / `0–100` | Ventilador 1: on/off o duty cycle  |
-| `test/datos/ventilador2`| `"on"` / `"off"` / `0–100` | Ventilador 2: on/off o duty cycle  |
-
-> [!TIP]
-> Para probar el sistema sin la interfaz gráfica, puedes usar **MQTT Explorer** o el cliente de consola `mosquitto_pub`:
-> ```bash
-> mosquitto_pub -h 192.168.X.X -t "test/datos/pwm1" -m "50"
-> mosquitto_pub -h 192.168.X.X -t "test/datos/led1" -m "on"
+### 3. La pantalla OLED no enciende o no muestra información
+> **Causa:** Fallo en la comunicación I2C o dirección incorrecta.  
+> **Solución:** Confirma que SDA esté en GPIO 21 y SCL en GPIO 22. Si tu pantalla usa la dirección `0x3D` en vez de `0x3C`, modifica en el código:
+> ```cpp
+> display.begin(SSD1306_SWITCHCAPVCC, 0x3D);
 > ```
+
+### 4. Al resetear el ESP32 (modo Broker), mi aplicación de C# o Dashboard se bloquea
+> **Causa:** En los sketches de la carpeta `Broker/`, el ESP32 **es el servidor principal**. Si se reinicia, el broker desaparece de la red y los clientes pierden la conexión inmediatamente.  
+> **Solución:** En producción, si necesitas reseteos frecuentes del nodo de sensores, utiliza la versión [`Client/Esp32ClientMQTTDobleNucleo`](file:///d:/RepoGit/CodigoEsp32Mqtt/Client/Esp32ClientMQTTDobleNucleo/Esp32ClientMQTTDobleNucleo.ino) conectada a un broker externo persistente (como Mosquitto en Raspberry Pi o PC).
+
+---
+
+## 📄 Licencia
+
+Este proyecto se distribuye bajo la licencia **MIT**. Consulta el archivo [LICENSE](file:///d:/RepoGit/CodigoEsp32Mqtt/LICENSE) para más detalles.

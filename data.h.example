@@ -1,0 +1,48 @@
+#ifndef DATA_H
+#define DATA_H
+
+// ============================================================================
+// CONFIGURACIÓN DE RED Y MQTT (PLANTILLA DE EJEMPLO)
+// ============================================================================
+// INSTRUCCIONES DE USO:
+// 1. Haz una copia de este archivo en la misma carpeta y nómbralo exactamente:
+//    data.h
+// 2. Configura a continuación tus credenciales reales de Wi-Fi y Broker MQTT.
+// 3. El archivo 'data.h' está protegido por el .gitignore para evitar que tus
+//    credenciales se suban al repositorio público.
+// ============================================================================
+
+// --- 1. Credenciales de Red Wi-Fi ---
+constexpr char SSID[] = "TU_RED_WIFI";
+constexpr char PASS[] = "TU_PASSWORD_WIFI";
+
+// Redes auxiliares opcionales (usadas en sketch pruebaMQTT con WiFiMulti)
+#define SSID_HOGAR  "TU_RED_WIFI_HOGAR"
+#define PASS_HOGAR  "TU_PASSWORD_HOGAR"
+#define SSID_MOVIL  "TU_RED_WIFI_MOVIL"
+#define PASS_MOVIL  "TU_PASSWORD_MOVIL"
+
+// --- 2. Servidor / Broker MQTT ---
+constexpr char BROKER_MQTT[]     = "192.168.1.100";  // IP del broker (si usas ESP32 como cliente)
+constexpr uint16_t PUERTO_MQTT   = 1883;             // Puerto estándar MQTT (sin TLS)
+constexpr char USER_MQTT[]       = "";               // Usuario MQTT (dejar vacío si no requiere)
+constexpr char PASS_MQTT[]       = "";               // Contraseña MQTT (dejar vacío si no requiere)
+constexpr char ESP_CLIENT_NAME[] = "esp32_control_node"; // ID único del cliente MQTT
+
+// --- 3. Tópicos MQTT de Publicación (ESP32 -> Broker -> Interfaz/Dashboard) ---
+constexpr char TOPIC_PUB_TEMP1[] = "test/sensor/temperatura1"; // Temperatura 1 en °C
+constexpr char TOPIC_PUB_TEMP2[] = "test/sensor/temperatura2"; // Temperatura 2 en °C
+constexpr char TOPIC_PUB_IQ1[]   = "test/sensor/corrienteQ1";   // Corriente filtrada Q1
+constexpr char TOPIC_PUB_IQ2[]   = "test/sensor/corrienteQ2";   // Corriente filtrada Q2
+constexpr char TOPIC_PUB_TIME[]  = "test/sensor/tiempo";        // Tiempo de ejecución en segundos
+
+// --- 4. Tópicos MQTT de Suscripción (Interfaz/Dashboard -> Broker -> ESP32) ---
+constexpr char TOPIC_SUB_PWM1[]  = "test/datos/pwm1";        // Ciclo útil 0-100 (%) para Transistor Q1
+constexpr char TOPIC_SUB_PWM2[]  = "test/datos/pwm2";        // Ciclo útil 0-100 (%) para Transistor Q2
+constexpr char TOPIC_SUB_LED1[]  = "test/datos/led1";        // "on" / "off" para LED 1
+constexpr char TOPIC_SUB_LED2[]  = "test/datos/led2";        // "on" / "off" para LED 2
+constexpr char TOPIC_SUB_VENT1[] = "test/datos/ventilador1"; // "on" / "off" o 0-100 para Ventilador 1
+constexpr char TOPIC_SUB_VENT2[] = "test/datos/ventilador2"; // "on" / "off" o 0-100 para Ventilador 2
+
+#endif // DATA_H
+
